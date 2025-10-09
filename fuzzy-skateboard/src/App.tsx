@@ -191,9 +191,16 @@ function App() {
   }));
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        width: "100vw",
+      }}
+    >
       <CssBaseline />
-      <AppBar position="static">
+      <AppBar position="static" sx={{ width: "100%" }}>
         <Toolbar>
           <Typography variant="h6">Fuzzy Skateboard Braking — Demo</Typography>
         </Toolbar>
@@ -203,22 +210,78 @@ function App() {
         <Tab label="Simulation" />
         <Tab label="Controls" />
         <Tab label="Fuzzy Tuner" />
-        <Tab label="Graphs" />
       </Tabs>
 
       <Box sx={{ p: 2, flex: 1, overflow: "auto" }}>
         {tabIndex === 0 && (
           <Paper sx={{ p: 1, height: "80vh", width: "100%" }}>
-            <SimulationCanvas 
-              stateRef={stateRef} 
-              uiTick={uiTick} 
-              showDebug 
-              onStart={handleStart}
-              onPause={handlePause}
-              onReset={handleReset}
-              onExport={handleExportCSV}
-              running={simRunning}
-            />
+            <Box sx={{ display: "flex", height: "100%" }}>
+              {/* Left: Simulation (50%) */}
+              <Box sx={{ flex: 1, minWidth: 0, display: "flex" }}>
+                <SimulationCanvas
+                  stateRef={stateRef}
+                  uiTick={uiTick}
+                  showDebug
+                  onStart={handleStart}
+                  onPause={handlePause}
+                  onReset={handleReset}
+                  onExport={handleExportCSV}
+                  running={simRunning}
+                />
+              </Box>
+
+              {/* Right: Graphs (50%) */}
+              <Box sx={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+                <GraphSelector
+                  showPosition={showPosition}
+                  setShowPosition={setShowPosition}
+                  showVelocity={showVelocity}
+                  setShowVelocity={setShowVelocity}
+                  showAcceleration={showAcceleration}
+                  setShowAcceleration={setShowAcceleration}
+                  showBrake={showBrake}
+                  setShowBrake={setShowBrake}
+                  showDistance={showDistance}
+                  setShowDistance={setShowDistance}
+                />
+
+                {showPosition && (
+                  <TimeSeriesChart
+                    data={chartData}
+                    dataKey="x"
+                    name="Position (m)"
+                  />
+                )}
+                {showVelocity && (
+                  <TimeSeriesChart
+                    data={chartData}
+                    dataKey="v"
+                    name="Velocity (m/s)"
+                  />
+                )}
+                {showAcceleration && (
+                  <TimeSeriesChart
+                    data={chartData}
+                    dataKey="a"
+                    name="Acceleration (m/s²)"
+                  />
+                )}
+                {showBrake && (
+                  <TimeSeriesChart
+                    data={chartData}
+                    dataKey="brake"
+                    name="Brake (%)"
+                  />
+                )}
+                {showDistance && (
+                  <TimeSeriesChart
+                    data={chartData}
+                    dataKey="distance"
+                    name="Distance (m)"
+                  />
+                )}
+              </Box>
+            </Box>
           </Paper>
         )}
 
@@ -246,59 +309,6 @@ function App() {
         {tabIndex === 2 && (
           <Paper sx={{ p: 1 }}>
             <FuzzyTuner />
-          </Paper>
-        )}
-
-        {tabIndex === 3 && (
-          <Paper sx={{ p: 1 }}>
-            <GraphSelector
-              showPosition={showPosition}
-              setShowPosition={setShowPosition}
-              showVelocity={showVelocity}
-              setShowVelocity={setShowVelocity}
-              showAcceleration={showAcceleration}
-              setShowAcceleration={setShowAcceleration}
-              showBrake={showBrake}
-              setShowBrake={setShowBrake}
-              showDistance={showDistance}
-              setShowDistance={setShowDistance}
-            />
-
-            {showPosition && (
-              <TimeSeriesChart
-                data={chartData}
-                dataKey="x"
-                name="Position (m)"
-              />
-            )}
-            {showVelocity && (
-              <TimeSeriesChart
-                data={chartData}
-                dataKey="v"
-                name="Velocity (m/s)"
-              />
-            )}
-            {showAcceleration && (
-              <TimeSeriesChart
-                data={chartData}
-                dataKey="a"
-                name="Acceleration (m/s²)"
-              />
-            )}
-            {showBrake && (
-              <TimeSeriesChart
-                data={chartData}
-                dataKey="brake"
-                name="Brake (%)"
-              />
-            )}
-            {showDistance && (
-              <TimeSeriesChart
-                data={chartData}
-                dataKey="distance"
-                name="Distance (m)"
-              />
-            )}
           </Paper>
         )}
       </Box>

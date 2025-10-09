@@ -151,7 +151,7 @@ export default function SimulationCanvas({
 
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", flex: 1, minWidth: 0 }}>
       {/* Control buttons */}
       <Stack direction="row" spacing={1} sx={{ mb: 2, justifyContent: "center" }}>
         {!running ? (
@@ -174,8 +174,8 @@ export default function SimulationCanvas({
       </Stack>
       
       {/* Canvas */}
-      <Box sx={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />
+      <Box sx={{ flex: 1, display: "flex", width: "100%", height: "100%", alignItems: "stretch", justifyContent: "stretch", minHeight: 0, minWidth: 0 }}>
+        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
       </Box>
     </Box>
   );
