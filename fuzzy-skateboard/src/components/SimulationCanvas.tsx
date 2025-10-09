@@ -1,4 +1,6 @@
 import React, { useEffect } from "react";
+import { Box, Stack, Button, IconButton } from "@mui/material";
+import SaveAltIcon from "@mui/icons-material/SaveAlt";
 import type { SimulationState } from "../physics/engine";
 
 type Props = {
@@ -7,6 +9,11 @@ type Props = {
   height?: number;
   uiTick?: number;
   showDebug?: boolean;
+  onStart?: () => void;
+  onPause?: () => void;
+  onReset?: () => void;
+  onExport?: () => void;
+  running?: boolean;
 };
 
 /**
@@ -20,6 +27,11 @@ export default function SimulationCanvas({
   height = 400,
   uiTick,
   showDebug = true,
+  onStart,
+  onPause,
+  onReset,
+  onExport,
+  running = false,
 }: Props) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
@@ -47,8 +59,6 @@ export default function SimulationCanvas({
       // ground line coordinates (we will tilt by theta)
       const midY = height / 2;
       const theta = s.theta;
-      const cosT = Math.cos(theta);
-      const sinT = Math.sin(theta);
 
       // draw incline as a long line
       ctx.strokeStyle = "#94a3b8";
@@ -138,16 +148,35 @@ export default function SimulationCanvas({
     // We use effect depending on uiTick below.
   }, [uiTick, width, height, stateRef, showDebug]);
 
-  // Also react to uiTick changes by redrawing (simple trick: effect above triggers on uiTick)
-  useEffect(() => {
-    const canvas = canvasRef.current!;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d")!;
-    // just re-run the draw logic (call same code path)
-    if (!stateRef.current) return;
-    // we call the same code as above but simpler: reuse draw by triggering re-render via uiTick prop
-    // (the previous effect will run due to uiTick dependency)
-  }, [uiTick]);
 
-  return <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />;
+
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Control buttons */}
+      <Stack direction="row" spacing={1} sx={{ mb: 2, justifyContent: "center" }}>
+        {!running ? (
+          <Button variant="contained" color="primary" onClick={onStart}>
+            Start
+          </Button>
+        ) : (
+          <Button variant="contained" color="secondary" onClick={onPause}>
+            Pause
+          </Button>
+        )}
+        <Button variant="outlined" onClick={onReset}>
+          Reset
+        </Button>
+        {onExport && (
+          <IconButton onClick={onExport} title="Export CSV">
+            <SaveAltIcon />
+          </IconButton>
+        )}
+      </Stack>
+      
+      {/* Canvas */}
+      <Box sx={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
+        <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />
+      </Box>
+    </Box>
+  );
 }

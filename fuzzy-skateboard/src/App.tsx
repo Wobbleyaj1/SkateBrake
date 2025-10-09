@@ -209,7 +209,16 @@ function App() {
       <Box sx={{ p: 2, flex: 1, overflow: "auto" }}>
         {tabIndex === 0 && (
           <Paper sx={{ p: 1, height: "80vh", width: "100%" }}>
-            <SimulationCanvas stateRef={stateRef} uiTick={uiTick} showDebug />
+            <SimulationCanvas 
+              stateRef={stateRef} 
+              uiTick={uiTick} 
+              showDebug 
+              onStart={handleStart}
+              onPause={handlePause}
+              onReset={handleReset}
+              onExport={handleExportCSV}
+              running={simRunning}
+            />
           </Paper>
         )}
 
@@ -230,11 +239,6 @@ function App() {
               setRollingResistance={setRollingResistance}
               timeScale={timeScale}
               setTimeScale={setTimeScale}
-              onStart={handleStart}
-              onPause={handlePause}
-              onReset={handleReset}
-              onExport={handleExportCSV}
-              running={simRunning}
             />
           </Paper>
         )}

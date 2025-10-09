@@ -2,12 +2,8 @@ import {
   Box,
   Slider,
   Typography,
-  Button,
   Divider,
-  Stack,
-  IconButton,
 } from "@mui/material";
-import SaveAltIcon from "@mui/icons-material/SaveAlt";
 
 type Props = {
   mass: number;
@@ -24,11 +20,6 @@ type Props = {
   setRollingResistance: (v: number) => void;
   timeScale: number;
   setTimeScale: (v: number) => void;
-  onStart: () => void;
-  onPause: () => void;
-  onReset: () => void;
-  onExport: () => void;
-  running: boolean;
 };
 
 function LabeledSlider({
@@ -81,11 +72,6 @@ export default function ControlsPanel(props: Props) {
     setRollingResistance,
     timeScale,
     setTimeScale,
-    onStart,
-    onPause,
-    onReset,
-    onExport,
-    running,
   } = props;
 
   return (
@@ -153,28 +139,8 @@ export default function ControlsPanel(props: Props) {
 
       <Divider sx={{ my: 1 }} />
 
-      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-        {!running ? (
-          <Button variant="contained" color="primary" onClick={onStart}>
-            Start
-          </Button>
-        ) : (
-          <Button variant="contained" color="secondary" onClick={onPause}>
-            Pause
-          </Button>
-        )}
-        <Button variant="outlined" onClick={onReset}>
-          Reset
-        </Button>
-        <IconButton onClick={onExport} title="Export CSV">
-          <SaveAltIcon />
-        </IconButton>
-      </Stack>
-
-      <Divider sx={{ my: 1 }} />
-
       <Typography variant="caption" color="text.secondary">
-        Tip: Start the simulation then toggle graphs to visualize results. Use
+        Tip: Use the Simulation tab to start/pause/reset the simulation, then toggle graphs here to visualize results. Use
         the Fuzzy Tuner panel to adjust membership functions if desired.
       </Typography>
     </Box>
