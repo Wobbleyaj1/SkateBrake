@@ -128,3 +128,45 @@ export function getBrakePercent(speed: number, distance: number) {
   if (den === 0) return 0;
   return num / den;
 }
+
+// compute brake percent from an explicit set of MFs (used by the tuner for live preview)
+export function computeBrakeWithMFs(mfs: any, speed: number, distance: number) {
+  const speedMFsLocal: MF[] = mfs.Speed;
+  const distanceMFsLocal: MF[] = mfs.Distance;
+  const brakeMFsLocal: MF[] = mfs.Brake;
+
+  const speedDegs = Object.fromEntries(
+    speedMFsLocal.map((m) => [m.name, evalMF(m, speed)])
+  );
+  const distDegs = Object.fromEntries(
+    distanceMFsLocal.map((m) => [m.name, evalMF(m, distance)])
+  );
+
+  const brakeActivations: Record<string, number> = {};
+  for (const r of rules) {
+    const sd = speedDegs[r.speed] ?? 0;
+    const dd = distDegs[r.dist] ?? 0;
+    const degree = Math.min(sd, dd);
+    brakeActivations[r.brake] = Math.max(
+      brakeActivations[r.brake] ?? 0,
+      degree
+    );
+  }
+
+  const samples = 200;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i <= samples; i++) {
+    const x = i / samples;
+    let mu = 0;
+    for (const bmf of brakeMFsLocal) {
+      const base = evalMF(bmf, x);
+      const act = brakeActivations[bmf.name] ?? 0;
+      mu = Math.max(mu, Math.min(base, act));
+    }
+    num += x * mu;
+    den += mu;
+  }
+  if (den === 0) return 0;
+  return num / den;
+}

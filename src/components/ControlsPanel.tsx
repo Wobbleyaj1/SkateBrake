@@ -1,4 +1,4 @@
-import { Box, Slider, Typography, Divider, Button, Stack } from "@mui/material";
+import { Box, Slider, Typography, Divider } from "@mui/material";
 
 type Props = {
   mass: number;
