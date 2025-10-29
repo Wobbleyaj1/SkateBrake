@@ -44,12 +44,11 @@ function App() {
     "Beginner" | "Intermediate" | "Advanced" | "Custom"
   >("Intermediate");
 
-  // Graph visibility
-  const [showPosition, setShowPosition] = useState(false);
-  const [showVelocity, setShowVelocity] = useState(false);
-  const [showAcceleration, setShowAcceleration] = useState(false);
-  const [showBrake, setShowBrake] = useState(false);
-  const [showDistance, setShowDistance] = useState(false);
+  // Graph visibility — defaults: Velocity, Acceleration, Brake, Distance ON
+  const [showVelocity, setShowVelocity] = useState(true);
+  const [showAcceleration, setShowAcceleration] = useState(true);
+  const [showBrake, setShowBrake] = useState(true);
+  const [showDistance, setShowDistance] = useState(true);
 
   // Logger and state refs
   const loggerRef = useRef(new Logger(10000));
@@ -142,8 +141,11 @@ function App() {
   const handleSnackbarClose = (_: unknown, reason?: string) => {
     // ignore clickaway events (clicks on the screen) to avoid accidental dismissals
     if (reason === "clickaway") return;
-    // simply hide the stop reason; do NOT clear logs or reset any data here
-    setStopReason(null);
+    // Mark that the user explicitly dismissed the stop snackbar. This prevents
+    // less-severe stop events emitted shortly after from reopening a new
+    // snackbar (avoids the "came to rest" popping up under "hit obstacle").
+    setStopFinalized(true);
+    // intentionally do NOT clear logs or other simulation data here
   };
 
   // Physics step callback
@@ -181,6 +183,9 @@ function App() {
       setSimRunning(true);
       // clear previous stop reason/details
       setStopReason(null);
+      // clear any dismissal/internal stop suppression when starting a new run
+      setStopFinalized(false);
+      setLastShownPriority(0);
       stateRef.current.stopDetails = null;
       startLoop({
         stateRef,
@@ -236,6 +241,9 @@ function App() {
     setSimRunning(false);
     setUiTick((t) => t + 1);
     setStopReason(null);
+    // reset suppression state when resetting the simulation
+    setStopFinalized(false);
+    setLastShownPriority(0);
     stateRef.current.stopDetails = null;
   };
 
@@ -260,7 +268,8 @@ function App() {
 
   // Chart data
   const chartData = loggerRef.current.getAll().map((d) => ({
-    t: d.t.toFixed(3),
+    // keep time as a number so chart interpolation/smoothing works correctly
+    t: d.t,
     x: d.x,
     v: d.v,
     a: d.a,
@@ -274,21 +283,46 @@ function App() {
   // downgraded by subsequent less-severe reasons. This prevents both 'rest'
   // and 'obstacle' from appearing stacked when they occur in quick succession.
   const [visibleStop, setVisibleStop] = useState<StopReason | null>(null);
+  // When the user dismisses the snackbar we want to ignore lower-priority
+  // stop events that might arrive immediately afterwards. Track whether the
+  // user has finalized (dismissed) the current stop and the priority of the
+  // last shown reason.
+  const [stopFinalized, setStopFinalized] = useState(false);
+  const [lastShownPriority, setLastShownPriority] = useState(0);
+
+  function priorityOf(r: StopReason) {
+    return r === "eject" ? 3 : r === "obstacle" ? 2 : 1;
+  }
 
   // Centralized stop handler — call this when the engine indicates the sim stopped.
   // It sets both the internal stopReason (for state/inspection) and visibleStop
-  // using a priority rule so only the most relevant snackbar is shown.
+  // using a priority rule so only the most relevant snackbar is shown. If the
+  // user manually dismissed the snackbar, ignore subsequent less-severe events
+  // until a new run/reset.
   function handleStop(reason: StopReason) {
+    const p = priorityOf(reason);
+    if (stopFinalized && p <= lastShownPriority) {
+      // still record the raw stop reason for inspection, but don't trigger UI
+      setStopReason(reason);
+      return;
+    }
+
     setStopReason(reason);
     setVisibleStop((prevVisible) => {
       // priority: eject > obstacle > rest
-      if (prevVisible === "eject") return prevVisible;
-      if (reason === "eject") return "eject";
-      if (prevVisible === "obstacle") return prevVisible;
-      if (reason === "obstacle") return "obstacle";
-      // otherwise set rest only if nothing else shown
-      if (!prevVisible) return "rest";
-      return prevVisible;
+      let newVisible: StopReason | null = prevVisible;
+      if (prevVisible === "eject") newVisible = prevVisible;
+      else if (reason === "eject") newVisible = "eject";
+      else if (prevVisible === "obstacle") newVisible = prevVisible;
+      else if (reason === "obstacle") newVisible = "obstacle";
+      else if (!prevVisible) newVisible = "rest";
+
+      if (newVisible) {
+        setLastShownPriority(priorityOf(newVisible));
+        setStopFinalized(false);
+      }
+
+      return newVisible;
     });
   }
 
@@ -342,8 +376,6 @@ function App() {
               {/* Right: Graphs (50%) */}
               <Box sx={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
                 <GraphSelector
-                  showPosition={showPosition}
-                  setShowPosition={setShowPosition}
                   showVelocity={showVelocity}
                   setShowVelocity={setShowVelocity}
                   showAcceleration={showAcceleration}
@@ -353,14 +385,6 @@ function App() {
                   showDistance={showDistance}
                   setShowDistance={setShowDistance}
                 />
-
-                {showPosition && (
-                  <TimeSeriesChart
-                    data={chartData}
-                    dataKey="x"
-                    name="Position (m)"
-                  />
-                )}
                 {showVelocity && (
                   <TimeSeriesChart
                     data={chartData}
@@ -427,10 +451,9 @@ function App() {
       <Snackbar
         open={!!visibleStop}
         onClose={(event?: React.SyntheticEvent | Event, reason?: string) => {
-          // hide visibleStop when user dismisses; also clear stopReason so popup won't re-open
+          // hide visibleStop when user dismisses; do not clear logs or stop details
           handleSnackbarClose(event, reason);
           setVisibleStop(null);
-          setStopReason(null);
         }}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
@@ -438,7 +461,6 @@ function App() {
           onClose={(event?: React.SyntheticEvent | Event, reason?: string) => {
             handleSnackbarClose(event, reason);
             setVisibleStop(null);
-            setStopReason(null);
           }}
           severity={
             visibleStop === "eject"

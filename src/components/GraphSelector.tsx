@@ -1,8 +1,6 @@
 import { Box, FormControlLabel, Checkbox, Typography } from "@mui/material";
 
 type Props = {
-  showPosition: boolean;
-  setShowPosition: (v: boolean) => void;
   showVelocity: boolean;
   setShowVelocity: (v: boolean) => void;
   showAcceleration: boolean;
@@ -17,15 +15,7 @@ export default function GraphSelector(props: Props) {
   return (
     <Box>
       <Typography variant="subtitle1">Graphs</Typography>
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={props.showPosition}
-            onChange={(e) => props.setShowPosition(e.target.checked)}
-          />
-        }
-        label="Position (m)"
-      />
+      {/* Position graph removed — velocity, acceleration, brake and distance are primary */}
       <FormControlLabel
         control={
           <Checkbox
