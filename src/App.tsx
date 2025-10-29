@@ -542,11 +542,11 @@ function App() {
           sx={{ width: "100%" }}
         >
           {visibleStop === "eject" && stateRef.current?.stopDetails
-            ? `Decel: ${stateRef.current.stopDetails.decel.toFixed(
+            ? `Rider thrown off: deceleration ${stateRef.current.stopDetails.decel.toFixed(
                 2
-              )} m/s² — threshold ${stateRef.current.stopDetails.decelThreshold.toFixed(
+              )} m/s², threshold: ${stateRef.current.stopDetails.decelThreshold.toFixed(
                 2
-              )} m/s²`
+              )} m/s²)`
             : visibleStop === "obstacle"
             ? "The board hit the obstacle."
             : "The board has come to rest."}
