@@ -73,38 +73,67 @@ export default function FuzzyTuner() {
   }
 
   function presetBeginner() {
+    // Beginner: brake earlier (distance treated as closer) and softer outputs
     const d = getDefaultMFs() as any;
     const copy = JSON.parse(JSON.stringify(d));
     if (copy.Brake) {
+      // softer brake outputs (Hard caps below 1)
       copy.Brake = [
-        { name: "Soft", type: "tri", params: [0, 0, 0.35] },
-        { name: "Moderate", type: "tri", params: [0.15, 0.4, 0.7] },
-        { name: "Hard", type: "tri", params: [0.5, 0.8, 0.95] },
+        { name: "Soft", type: "tri", params: [0, 0, 0.3] },
+        { name: "Moderate", type: "tri", params: [0.15, 0.35, 0.6] },
+        { name: "Hard", type: "tri", params: [0.4, 0.65, 0.85] },
+      ];
+    }
+    if (copy.Distance) {
+      // treat distances as closer so braking begins earlier
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 8] },
+        { name: "Medium", type: "tri", params: [6, 12, 18] },
+        { name: "Far", type: "tri", params: [15, 28, 40] },
       ];
     }
     setLocal(copy);
   }
 
   function presetIntermediate() {
-    const d = getDefaultMFs() as any;
-    setLocal(JSON.parse(JSON.stringify(d)));
-  }
-
-  function presetProfessional() {
+    // Intermediate: split the difference between Beginner and Advanced
     const d = getDefaultMFs() as any;
     const copy = JSON.parse(JSON.stringify(d));
     if (copy.Brake) {
       copy.Brake = [
-        { name: "Soft", type: "tri", params: [0, 0, 0.25] },
-        { name: "Moderate", type: "tri", params: [0.1, 0.35, 0.7] },
-        { name: "Hard", type: "tri", params: [0.4, 0.85, 1] },
+        { name: "Soft", type: "tri", params: [0, 0, 0.28] },
+        { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
+        { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
       ];
     }
     if (copy.Distance) {
       copy.Distance = [
-        { name: "Close", type: "tri", params: [0, 0, 4] },
-        { name: "Medium", type: "tri", params: [3, 8, 14] },
+        { name: "Close", type: "tri", params: [0, 0, 5] },
+        { name: "Medium", type: "tri", params: [3, 9, 15] },
         { name: "Far", type: "tri", params: [12, 20, 30] },
+      ];
+    }
+    setLocal(copy);
+  }
+
+  function presetAdvanced() {
+    // Advanced: brake later (distance treated as farther) but harder outputs
+    const d = getDefaultMFs() as any;
+    const copy = JSON.parse(JSON.stringify(d));
+    if (copy.Brake) {
+      // stronger braking: Hard peaks closer to 1
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.2] },
+        { name: "Moderate", type: "tri", params: [0.15, 0.45, 0.75] },
+        { name: "Hard", type: "tri", params: [0.6, 0.95, 1] },
+      ];
+    }
+    if (copy.Distance) {
+      // treat distances as farther so braking happens later
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 3] },
+        { name: "Medium", type: "tri", params: [2.5, 8, 14] },
+        { name: "Far", type: "tri", params: [10, 20, 35] },
       ];
     }
     setLocal(copy);
@@ -232,8 +261,8 @@ export default function FuzzyTuner() {
             <Button variant="text" onClick={presetIntermediate}>
               Intermediate
             </Button>
-            <Button variant="text" onClick={presetProfessional}>
-              Professional
+            <Button variant="text" onClick={presetAdvanced}>
+              Advanced
             </Button>
             {applied && (
               <Typography variant="caption" sx={{ alignSelf: "center" }}>

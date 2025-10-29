@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
   CssBaseline,
@@ -8,12 +8,11 @@ import {
   Tabs,
   Tab,
   Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Button,
+  Snackbar,
+  Alert,
 } from "@mui/material";
+
 import SimulationCanvas from "./components/SimulationCanvas";
 import ControlsPanel from "./components/ControlsPanel";
 import FuzzyTuner from "./components/FuzzyTuner";
@@ -107,6 +106,13 @@ function App() {
     ejectAccelThreshold,
   ]);
 
+  // snackbar close handler (do not clear logs/stopDetails)
+  const handleSnackbarClose = (_: unknown, reason?: string) => {
+    // ignore clickaway events (clicks on the screen) to avoid accidental dismissals
+    if (reason === "clickaway") return;
+    handleDialogDismiss();
+  };
+
   // Physics step callback
   const onPhysicsStep = (s: SimulationState) => {
     const distance = Math.max(0, s.obstaclePosition - s.x);
@@ -168,6 +174,12 @@ function App() {
 
   const handleReset = () => {
     stopLoop(rafRef);
+    // debug: log when reset is invoked to help trace unexpected resets
+    // (user reported clicking on the screen triggers chart reset)
+    // This will appear in the browser console when the handler runs.
+    // Use console.log so it's visible even if debug-level logs are filtered.
+    // eslint-disable-next-line no-console
+    console.log("handleReset called", new Error().stack);
     const s = createDefaultState();
     s.mass = mass;
     s.v = initialSpeed;
@@ -206,9 +218,31 @@ function App() {
   };
 
   const handleDialogDismiss = () => {
+    // Only close the dialog. Do NOT clear stopDetails or logs here —
+    // closing the dialog should not reset graphs or recorded data.
+    // debug: log dialog dismiss
+    // eslint-disable-next-line no-console
+    console.log("handleDialogDismiss called");
     setStopReason(null);
-    if (stateRef.current) stateRef.current.stopDetails = null;
   };
+
+  // Global click logger (temporary) to help diagnose which element is receiving clicks
+  // that might be triggering Reset or other side effects. Enabled only in dev.
+  React.useEffect(() => {
+    function onGlobalClick(e: MouseEvent) {
+      // eslint-disable-next-line no-console
+      console.log(
+        "Global click target:",
+        (e.target as Element)?.tagName,
+        e.target
+      );
+    }
+    window.addEventListener("click", onGlobalClick, true);
+    return () => window.removeEventListener("click", onGlobalClick, true);
+  }, []);
+
+  // allow backdrop click / escape to close the dialog; the dismiss handler
+  // must not clear logs or graphs.
 
   const handleDialogReset = () => {
     handleReset();
@@ -361,35 +395,40 @@ function App() {
           </Paper>
         )}
       </Box>
-      {/* Stop reason dialog (replaces canvas overlay for clarity) */}
-      <Dialog open={!!stopReason} onClose={handleDialogDismiss}>
-        <DialogTitle>
-          {stopReason === "eject"
-            ? "Rider Ejected"
-            : stopReason === "obstacle"
-            ? "Hit Obstacle"
-            : "Simulation Stopped"}
-        </DialogTitle>
-        <DialogContent>
-          <Typography>
-            {stopReason === "eject" && stateRef.current?.stopDetails
-              ? `Decel: ${stateRef.current.stopDetails.decel.toFixed(
-                  2
-                )} m/s² — threshold ${stateRef.current.stopDetails.decelThreshold.toFixed(
-                  2
-                )} m/s²`
+      {/* Stop reason toast (non-modal) */}
+      <Snackbar
+        open={!!stopReason}
+        autoHideDuration={8000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={
+            stopReason === "eject"
+              ? "error"
               : stopReason === "obstacle"
-              ? "The board hit the obstacle."
-              : "The board has come to rest."}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleDialogDismiss}>Dismiss</Button>
-          <Button onClick={handleDialogReset} variant="contained">
-            Reset Simulation
-          </Button>
-        </DialogActions>
-      </Dialog>
+              ? "warning"
+              : "info"
+          }
+          sx={{ width: "100%" }}
+          action={
+            <Button color="inherit" size="small" onClick={handleDialogReset}>
+              Reset
+            </Button>
+          }
+        >
+          {stopReason === "eject" && stateRef.current?.stopDetails
+            ? `Decel: ${stateRef.current.stopDetails.decel.toFixed(
+                2
+              )} m/s² — threshold ${stateRef.current.stopDetails.decelThreshold.toFixed(
+                2
+              )} m/s²`
+            : stopReason === "obstacle"
+            ? "The board hit the obstacle."
+            : "The board has come to rest."}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
