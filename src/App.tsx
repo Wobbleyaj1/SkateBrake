@@ -85,7 +85,7 @@ function App() {
       brake: 0,
       distance: Math.max(0, s.obstaclePosition - s.x),
     });
-  // Apply intermediate presets so UI and behavior match the default mode
+    // Apply intermediate presets so UI and behavior match the default mode
     try {
       const defaults = getDefaultMFs();
       const intermediate = {
@@ -125,7 +125,7 @@ function App() {
         { name: "Medium", type: "tri", params: [6, 12, 18] },
         { name: "Far", type: "tri", params: [15, 28, 40] },
       ];
-  setEjectAccelThreshold(4);
+      setEjectAccelThreshold(4);
     } else if (mode === "Intermediate") {
       copy.Brake = [
         { name: "Soft", type: "tri", params: [0, 0, 0.28] },
@@ -222,11 +222,11 @@ function App() {
       s.c_roll = rollingResistance;
       loggerRef.current.clear();
       setSimRunning(true);
-  // Clear previous stop details and UI suppression state
-  setStopReason(null);
-  setStopFinalized(false);
-  setLastShownPriority(0);
-  stateRef.current.stopDetails = null;
+      // Clear previous stop details and UI suppression state
+      setStopReason(null);
+      setStopFinalized(false);
+      setLastShownPriority(0);
+      stateRef.current.stopDetails = null;
       startLoop({
         stateRef,
         onStep: onPhysicsStep,
@@ -264,7 +264,7 @@ function App() {
     s.mu = mu;
     s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
-  // No geometry defaults here; engine defaults are used
+    // No geometry defaults here; engine defaults are used
     stateRef.current = s;
     loggerRef.current.clear();
     loggerRef.current.push({
