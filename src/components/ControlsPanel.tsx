@@ -1,9 +1,4 @@
-import {
-  Box,
-  Slider,
-  Typography,
-  Divider,
-} from "@mui/material";
+import { Box, Slider, Typography, Divider } from "@mui/material";
 
 type Props = {
   mass: number;
@@ -20,6 +15,10 @@ type Props = {
   setRollingResistance: (v: number) => void;
   timeScale: number;
   setTimeScale: (v: number) => void;
+  ejectAccelThreshold: number;
+  setEjectAccelThreshold: (v: number) => void;
+  mode?: "Beginner" | "Intermediate" | "Advanced" | "Custom";
+  // Note: only decel threshold is used for ejection decision
 };
 
 function LabeledSlider({
@@ -30,6 +29,7 @@ function LabeledSlider({
   step,
   onChange,
   format,
+  disabled,
 }: {
   label: string;
   value: number;
@@ -38,6 +38,7 @@ function LabeledSlider({
   step?: number;
   onChange: (v: number) => void;
   format?: (v: number) => string;
+  disabled?: boolean;
 }) {
   return (
     <Box sx={{ my: 1 }}>
@@ -50,6 +51,7 @@ function LabeledSlider({
         max={max}
         step={step ?? (max - min) / 100}
         onChange={(_, v) => onChange(Array.isArray(v) ? v[0] : v)}
+        disabled={disabled}
         valueLabelDisplay="auto"
       />
     </Box>
@@ -72,6 +74,8 @@ export default function ControlsPanel(props: Props) {
     setRollingResistance,
     timeScale,
     setTimeScale,
+    ejectAccelThreshold,
+    setEjectAccelThreshold,
   } = props;
 
   return (
@@ -139,10 +143,22 @@ export default function ControlsPanel(props: Props) {
 
       <Divider sx={{ my: 1 }} />
 
-      <Typography variant="caption" color="text.secondary">
-        Tip: Use the Simulation tab to start/pause/reset the simulation, then toggle graphs here to visualize results. Use
-        the Fuzzy Tuner panel to adjust membership functions if desired.
-      </Typography>
+      <Typography variant="subtitle2">Ejection / Rider Safety</Typography>
+      <LabeledSlider
+        label="Acceleration threshold (m/s²)"
+        value={ejectAccelThreshold}
+        min={1}
+        max={30}
+        step={0.5}
+        onChange={setEjectAccelThreshold}
+        disabled={props.mode !== undefined && props.mode !== "Custom"}
+      />
+      {props.mode && props.mode !== "Custom" ? (
+        <Typography variant="caption" color="text.secondary" sx={{ my: 1 }}>
+          Eject threshold locked by selected Mode: {props.mode}. Switch to
+          Custom mode in the title bar to edit.
+        </Typography>
+      ) : null}
     </Box>
   );
 }

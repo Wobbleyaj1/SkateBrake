@@ -15,10 +15,12 @@ type MF =
   | { name: string; type: "trap"; params: [number, number, number, number] };
 
 // default MFs (numbers chosen for ranges: speed 0-10 m/s, distance 0-20 m, brake 0-1)
+// tuned speed MFs: narrower Low and Medium ranges for finer control at
+// common riding speeds (0-8 m/s). This improves early braking sensitivity.
 let speedMFs: MF[] = [
-  { name: "Low", type: "tri", params: [0, 0, 4] },
-  { name: "Medium", type: "tri", params: [2, 5, 8] },
-  { name: "High", type: "tri", params: [6, 10, 10] },
+  { name: "Low", type: "tri", params: [0, 0, 2.5] },
+  { name: "Medium", type: "tri", params: [1.5, 4, 6.5] },
+  { name: "High", type: "tri", params: [5.5, 10, 12] },
 ];
 
 let distanceMFs: MF[] = [
@@ -118,6 +120,48 @@ export function getBrakePercent(speed: number, distance: number) {
     // aggregated membership at x is max over clipped base MF values
     let mu = 0;
     for (const bmf of brakeMFs) {
+      const base = evalMF(bmf, x);
+      const act = brakeActivations[bmf.name] ?? 0;
+      mu = Math.max(mu, Math.min(base, act));
+    }
+    num += x * mu;
+    den += mu;
+  }
+  if (den === 0) return 0;
+  return num / den;
+}
+
+// compute brake percent from an explicit set of MFs (used by the tuner for live preview)
+export function computeBrakeWithMFs(mfs: any, speed: number, distance: number) {
+  const speedMFsLocal: MF[] = mfs.Speed;
+  const distanceMFsLocal: MF[] = mfs.Distance;
+  const brakeMFsLocal: MF[] = mfs.Brake;
+
+  const speedDegs = Object.fromEntries(
+    speedMFsLocal.map((m) => [m.name, evalMF(m, speed)])
+  );
+  const distDegs = Object.fromEntries(
+    distanceMFsLocal.map((m) => [m.name, evalMF(m, distance)])
+  );
+
+  const brakeActivations: Record<string, number> = {};
+  for (const r of rules) {
+    const sd = speedDegs[r.speed] ?? 0;
+    const dd = distDegs[r.dist] ?? 0;
+    const degree = Math.min(sd, dd);
+    brakeActivations[r.brake] = Math.max(
+      brakeActivations[r.brake] ?? 0,
+      degree
+    );
+  }
+
+  const samples = 200;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i <= samples; i++) {
+    const x = i / samples;
+    let mu = 0;
+    for (const bmf of brakeMFsLocal) {
       const base = evalMF(bmf, x);
       const act = brakeActivations[bmf.name] ?? 0;
       mu = Math.max(mu, Math.min(base, act));

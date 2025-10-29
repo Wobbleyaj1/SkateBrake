@@ -27,6 +27,18 @@ export type SimulationState = {
   c_roll: number; // rolling resistance coefficient
   obstaclePosition: number; // m
   lastBrakePercent: number; // 0..1 (written by controller)
+  // threshold acceleration magnitude (m/s^2) above which the rider is considered thrown
+  ejectAccelThreshold?: number;
+  // threshold jerk magnitude (m/s^3) above which the rider may be thrown
+  ejectJerkThreshold?: number;
+  // rider center-of-mass height above board (m)
+  riderCOMHeight?: number;
+  // wheelbase length (m) between front and rear contact points
+  wheelbase?: number;
+  // tipping factor (0..1) fraction of the static resisting moment required to tip
+  tippingFactor?: number;
+  // details about why the sim stopped (populated on eject)
+  stopDetails?: StopDetails | null;
 };
 
 export function createDefaultState(): SimulationState {
@@ -42,16 +54,47 @@ export function createDefaultState(): SimulationState {
     c_roll: 0.01,
     obstaclePosition: 20,
     lastBrakePercent: 0,
+    ejectAccelThreshold: 8,
+    ejectJerkThreshold: 20,
+    riderCOMHeight: 1.0,
+    wheelbase: 0.6,
+    tippingFactor: 0.8,
   };
 }
 
 /**
  * physics step: reads state.lastBrakePercent for brake decision
  */
-export function physicsStep(state: SimulationState) {
+/**
+ * Perform one physics step. Returns true when the simulation should stop
+ * (e.g. reached static equilibrium or collided with obstacle).
+ */
+export type StopReason = "rest" | "obstacle" | "eject";
+export type StopCause = "decel";
+
+export type StopDetails = {
+  cause: StopCause;
+  decel: number;
+  decelThreshold: number;
+};
+
+/**
+ * Perform one physics step. Returns a StopReason when the simulation should stop
+ * (e.g. reached static equilibrium, collided with obstacle, or rider ejected),
+ * otherwise returns null.
+ */
+export function physicsStep(state: SimulationState): StopReason | null {
   const g = 9.81;
   const m = Math.max(0.1, state.mass);
   const theta = state.theta;
+  // if we're already at or past the obstacle, declare collision immediately
+  if (state.x >= state.obstaclePosition) {
+    state.x = state.obstaclePosition;
+    state.v = 0;
+    state.a = 0;
+    state.t += state.dt;
+    return "obstacle";
+  }
   const N = m * g * Math.cos(theta);
   // downslope gravitational force (positive downhill)
   const F_gravity = m * g * Math.sin(theta);
@@ -62,8 +105,6 @@ export function physicsStep(state: SimulationState) {
   const brakePercent = Math.max(0, Math.min(1, state.lastBrakePercent ?? 0));
   const F_brake_mag = Math.min(F_maxBrake, brakePercent * F_maxBrake);
 
-
-
   // define net force along slope with positive direction toward increasing x (toward obstacle)
   // gravity acts downhill which we assume pushes toward positive x if theta>0.
   let F_net = 0;
@@ -72,8 +113,6 @@ export function physicsStep(state: SimulationState) {
   // use a slightly larger velocity tolerance to avoid numeric sign-flipping
   // and chattering when the skateboard is effectively stopped
   const velTol = 1e-3;
-
-  
 
   // If nearly stopped, apply a simple static-friction-like check: the combination of
   // driving forces (gravity) must overcome resistive forces (rolling + braking) to start motion.
@@ -88,11 +127,11 @@ export function physicsStep(state: SimulationState) {
       // will start moving toward -x (unlikely in normal config but handle symmetry)
       F_net = drive + resist;
     } else {
-      // static equilibrium: nothing moves
+      // static equilibrium: nothing moves -> signal to stop simulation
       state.a = 0;
       state.v = 0;
       state.t += state.dt;
-      return;
+      return "rest";
     }
   } else {
     // when moving, resistive forces oppose the direction of motion
@@ -107,25 +146,65 @@ export function physicsStep(state: SimulationState) {
   // acceleration
   const a = F_net / m;
 
-  // semi-implicit Euler
+  // compute timestep
   const dt = state.dt;
-  state.v = state.v + a * dt;
 
-  // avoid tiny oscillations / sign flips around zero velocity
-  if (Math.abs(state.v) < velTol) {
-    state.v = 0;
-    state.a = 0;
-  } else {
-    // if sign flipped across the update and the new velocity is still small,
-    // clamp to zero to prevent chattering
-    if (Math.sign(state.v) !== Math.sign(v) && Math.abs(state.v) < 5 * velTol) {
-      state.v = 0;
-      state.a = 0;
-    } else {
+  // Ejection checks (more physically informed). Skip aggressive ejection checks on the
+  // first step to avoid false positives caused by initial transients. We evaluate
+  // ejection at any speed (no minimum speed gate), but require the sim to have
+  // advanced at least one timestep (state.t > 0).
+  if (state.t > 0) {
+    // Simple deceleration-only ejection: trigger when measured decel exceeds
+    // the configured ejectAccelThreshold. Use only the deceleration rate as
+    // requested; geometry/jerk/tipping are ignored.
+    const decel = v > 0 && a < 0 ? -a : 0;
+    const decelThreshold = state.ejectAccelThreshold ?? 8;
+
+    if (decel >= decelThreshold) {
+      state.stopDetails = {
+        cause: "decel",
+        decel,
+        decelThreshold,
+      };
       state.a = a;
+      state.v = 0;
+      state.t += dt;
+      return "eject";
     }
   }
 
+  // semi-implicit Euler with an early-stop when velocity crosses zero.
+  const prevV = state.v;
+  const prevX = state.x;
+
+  state.v = state.v + a * dt;
+
+  // Predict next position to detect collisions that would occur this step.
+  const predictedX = prevX + state.v * dt;
+  // If the predicted position reaches or passes the obstacle, treat this as a collision
+  // and return 'obstacle' with the board positioned exactly at the obstacle.
+  if (predictedX >= state.obstaclePosition) {
+    state.x = state.obstaclePosition;
+    state.v = 0;
+    state.a = 0;
+    state.t += dt;
+    return "obstacle";
+  }
+
+  // If velocity has effectively reached zero or crossed sign, stop the sim immediately.
+  // We do this because this simulation's purpose is to determine whether the board
+  // comes to rest before hitting the obstacle; we don't need to simulate reverse motion.
+  if (state.v <= velTol || Math.sign(state.v) !== Math.sign(prevV)) {
+    // clamp to zero and restore position to previous step (no reverse travel)
+    state.v = 0;
+    state.a = 0;
+    state.x = prevX;
+    state.t += dt;
+    return "rest";
+  }
+
+  // otherwise accept updated velocity and advance position/time
+  state.a = a;
   state.x = state.x + state.v * dt;
   state.t += dt;
 
@@ -134,7 +213,10 @@ export function physicsStep(state: SimulationState) {
     state.x = state.obstaclePosition;
     state.v = 0;
     state.a = 0;
+    return "obstacle";
   }
+
+  return null;
 }
 
 /**
@@ -154,12 +236,14 @@ export function startLoop({
   timeScale = 1,
   uiCallback,
   rafRef,
+  onEnd,
 }: {
   stateRef: React.RefObject<SimulationState>;
   onStep?: (s: SimulationState) => void;
   timeScale?: number;
   uiCallback?: () => void;
   rafRef: React.MutableRefObject<number | null>;
+  onEnd?: (reason: StopReason) => void;
 }) {
   let lastTime = performance.now();
   let accumulator = 0;
@@ -175,9 +259,18 @@ export function startLoop({
     // run physics in fixed dt units
     while (accumulator >= s.dt) {
       // call controller via state.lastBrakePercent if host set it prior to step
-      physicsStep(s);
+      const shouldStop = physicsStep(s);
       if (onStep) onStep(s);
       accumulator -= s.dt;
+
+      if (shouldStop) {
+        // mark RAF ref as stopped and exit frame so we don't schedule another RAF
+        rafRef.current = null;
+        // call uiCallback one last time so UI can reflect final state
+        if (uiCallback) uiCallback();
+        if (onEnd && shouldStop) onEnd(shouldStop);
+        return;
+      }
     }
 
     // occasional UI callback

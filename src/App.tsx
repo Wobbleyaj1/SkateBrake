@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
   CssBaseline,
@@ -8,15 +8,24 @@ import {
   Tabs,
   Tab,
   Paper,
+  Snackbar,
+  Alert,
+  Select,
+  MenuItem,
 } from "@mui/material";
+
 import SimulationCanvas from "./components/SimulationCanvas";
 import ControlsPanel from "./components/ControlsPanel";
 import FuzzyTuner from "./components/FuzzyTuner";
 import GraphSelector from "./components/GraphSelector";
 import TimeSeriesChart from "./components/TimeSeriesChart";
 import { createDefaultState, startLoop, stopLoop } from "./physics/engine";
-import type { SimulationState } from "./physics/engine";
-import { getBrakePercent } from "./fuzzy/controller";
+import type { SimulationState, StopReason } from "./physics/engine";
+import {
+  getBrakePercent,
+  getDefaultMFs,
+  setMemberships,
+} from "./fuzzy/controller";
 import { Logger } from "./utils/logger";
 
 function App() {
@@ -29,15 +38,19 @@ function App() {
   const [rollingResistance, setRollingResistance] = useState(0.01);
   const [timeScale, setTimeScale] = useState(1);
   const [simRunning, setSimRunning] = useState(false);
+  const [ejectAccelThreshold, setEjectAccelThreshold] = useState(8);
+  const [, setStopReason] = useState<StopReason | null>(null);
+  const [skillMode, setSkillMode] = useState<
+    "Beginner" | "Intermediate" | "Advanced" | "Custom"
+  >("Intermediate");
 
-  // Graph visibility
-  const [showPosition, setShowPosition] = useState(false);
-  const [showVelocity, setShowVelocity] = useState(false);
-  const [showAcceleration, setShowAcceleration] = useState(false);
-  const [showBrake, setShowBrake] = useState(false);
-  const [showDistance, setShowDistance] = useState(false);
+  // Graph visibility — defaults: Velocity, Acceleration, Brake, Distance ON
+  const [showVelocity, setShowVelocity] = useState(true);
+  const [showAcceleration, setShowAcceleration] = useState(true);
+  const [showBrake, setShowBrake] = useState(true);
+  const [showDistance, setShowDistance] = useState(true);
 
-  // Logger and state refs
+  // Refs for logger and mutable simulation state
   const loggerRef = useRef(new Logger(10000));
   const stateRef = useRef<SimulationState>(createDefaultState());
   const rafRef = useRef<number | null>(null);
@@ -51,7 +64,7 @@ function App() {
     setTabIndex(newValue);
   };
 
-  // Initialize simulation state on mount
+  // Initialize simulation state on mount and apply an intermediate fuzzy preset
   useEffect(() => {
     const s = createDefaultState();
     s.mass = mass;
@@ -61,6 +74,7 @@ function App() {
     s.mu = mu;
     s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
+    s.ejectAccelThreshold = ejectAccelThreshold;
     stateRef.current = s;
     loggerRef.current.clear();
     loggerRef.current.push({
@@ -71,7 +85,78 @@ function App() {
       brake: 0,
       distance: Math.max(0, s.obstaclePosition - s.x),
     });
-  }, []); // run once
+    // Apply intermediate presets so UI and behavior match the default mode
+    try {
+      const defaults = getDefaultMFs();
+      const intermediate = {
+        Speed: defaults.Speed,
+        Distance: [
+          { name: "Close", type: "tri", params: [0, 0, 5] },
+          { name: "Medium", type: "tri", params: [3, 9, 15] },
+          { name: "Far", type: "tri", params: [12, 20, 30] },
+        ],
+        Brake: [
+          { name: "Soft", type: "tri", params: [0, 0, 0.28] },
+          { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
+          { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
+        ],
+      };
+      setMemberships(intermediate);
+    } catch (e) {
+      // If setting presets fails, log a warning but continue
+      // eslint-disable-next-line no-console
+      console.warn("Failed to set intermediate preset on mount", e);
+    }
+    document.title = `Braking Simulation — ${skillMode}`;
+  }, []);
+
+  function applyPreset(mode: "Beginner" | "Intermediate" | "Advanced") {
+    // Use the same presets as the tuner: derive from defaults and tweak
+    const defaults = getDefaultMFs() as any;
+    const copy = JSON.parse(JSON.stringify(defaults));
+    if (mode === "Beginner") {
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.3] },
+        { name: "Moderate", type: "tri", params: [0.15, 0.35, 0.6] },
+        { name: "Hard", type: "tri", params: [0.4, 0.65, 0.85] },
+      ];
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 8] },
+        { name: "Medium", type: "tri", params: [6, 12, 18] },
+        { name: "Far", type: "tri", params: [15, 28, 40] },
+      ];
+      setEjectAccelThreshold(4);
+    } else if (mode === "Intermediate") {
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.28] },
+        { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
+        { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
+      ];
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 5] },
+        { name: "Medium", type: "tri", params: [3, 9, 15] },
+        { name: "Far", type: "tri", params: [12, 20, 30] },
+      ];
+      setEjectAccelThreshold(7.5);
+    } else if (mode === "Advanced") {
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.2] },
+        { name: "Moderate", type: "tri", params: [0.15, 0.45, 0.75] },
+        { name: "Hard", type: "tri", params: [0.6, 0.95, 1] },
+      ];
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 3] },
+        { name: "Medium", type: "tri", params: [2.5, 8, 14] },
+        { name: "Far", type: "tri", params: [10, 20, 35] },
+      ];
+      setEjectAccelThreshold(11);
+    }
+
+    // Commit presets and update UI mode
+    setMemberships(copy);
+    setSkillMode(mode);
+    document.title = `Braking Simulation — ${mode}`;
+  }
 
   // Update state when parameters change (if not running)
   useEffect(() => {
@@ -84,6 +169,7 @@ function App() {
       stateRef.current.c_roll = rollingResistance;
       stateRef.current.x = 0;
       stateRef.current.t = 0;
+      stateRef.current.ejectAccelThreshold = ejectAccelThreshold;
       loggerRef.current.clear();
     }
   }, [
@@ -93,14 +179,22 @@ function App() {
     mu,
     inclineDeg,
     rollingResistance,
-    simRunning,
+    ejectAccelThreshold,
   ]);
 
-  // Physics step callback
+  const handleSnackbarClose = (_: unknown, reason?: string) => {
+    // Ignore clickaway events to avoid accidental dismissals
+    if (reason === "clickaway") return;
+    // Mark that the user explicitly dismissed the stop snackbar. This prevents
+    // less-severe stop events emitted shortly after from reopening a new
+    // snackbar (avoids the "came to rest" popping up under "hit obstacle").
+    setStopFinalized(true);
+    // intentionally do NOT clear logs or simulation data here
+  };
+
   const onPhysicsStep = (s: SimulationState) => {
     const distance = Math.max(0, s.obstaclePosition - s.x);
-    // use speed magnitude for controller input so braking decisions are
-    // based on how fast the skateboard is moving, regardless of direction
+    // Controller uses speed magnitude so braking decisions are independent of direction
     const speedForController = Math.abs(s.v);
     const brakePercent = getBrakePercent(speedForController, distance);
     s.lastBrakePercent = brakePercent;
@@ -115,7 +209,6 @@ function App() {
     });
   };
 
-  // Start/pause/reset handlers
   const handleStart = () => {
     if (!simRunning) {
       const s = stateRef.current;
@@ -129,12 +222,24 @@ function App() {
       s.c_roll = rollingResistance;
       loggerRef.current.clear();
       setSimRunning(true);
+      // Clear previous stop details and UI suppression state
+      setStopReason(null);
+      setStopFinalized(false);
+      setLastShownPriority(0);
+      stateRef.current.stopDetails = null;
       startLoop({
         stateRef,
         onStep: onPhysicsStep,
         timeScale,
         uiCallback: () => setUiTick((t) => t + 1),
         rafRef,
+        onEnd: (reason) => {
+          // update UI state when engine stops itself
+          setSimRunning(false);
+          setUiTick((t) => t + 1);
+          // centralized stop handler to avoid races
+          handleStop(reason);
+        },
       });
     }
   };
@@ -148,6 +253,9 @@ function App() {
 
   const handleReset = () => {
     stopLoop(rafRef);
+    // Debug: log stack when reset is invoked to aid tracing
+    // eslint-disable-next-line no-console
+    console.log("handleReset called", new Error().stack);
     const s = createDefaultState();
     s.mass = mass;
     s.v = initialSpeed;
@@ -156,6 +264,7 @@ function App() {
     s.mu = mu;
     s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
+    // No geometry defaults here; engine defaults are used
     stateRef.current = s;
     loggerRef.current.clear();
     loggerRef.current.push({
@@ -168,9 +277,13 @@ function App() {
     });
     setSimRunning(false);
     setUiTick((t) => t + 1);
+    setStopReason(null);
+    // Reset suppression state when resetting the simulation
+    setStopFinalized(false);
+    setLastShownPriority(0);
+    stateRef.current.stopDetails = null;
   };
 
-  // Export CSV
   const handleExportCSV = () => {
     const csv = loggerRef.current.toCSV();
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -184,13 +297,61 @@ function App() {
 
   // Chart data
   const chartData = loggerRef.current.getAll().map((d) => ({
-    t: d.t.toFixed(3),
+    // keep time as a number so chart interpolation/smoothing works correctly
+    t: d.t,
     x: d.x,
     v: d.v,
     a: d.a,
     brake: d.brake * 100,
     distance: d.distance,
   }));
+  // Prefer obstacle/eject over rest when displaying the stop snackbar.
+  // Visible snackbar state and suppression logic ensure only the most relevant
+  // stop notification is shown and that user dismissals temporarily suppress
+  // less-severe subsequent notifications.
+  const [visibleStop, setVisibleStop] = useState<StopReason | null>(null);
+  // When the user dismisses the snackbar we want to ignore lower-priority
+  // stop events that might arrive immediately afterwards. Track whether the
+  // user has finalized (dismissed) the current stop and the priority of the
+  // last shown reason.
+  const [stopFinalized, setStopFinalized] = useState(false);
+  const [lastShownPriority, setLastShownPriority] = useState(0);
+
+  function priorityOf(r: StopReason) {
+    return r === "eject" ? 3 : r === "obstacle" ? 2 : 1;
+  }
+
+  // Centralized stop handler — call this when the engine indicates the sim stopped.
+  // It sets both the internal stopReason (for state/inspection) and visibleStop
+  // using a priority rule so only the most relevant snackbar is shown. If the
+  // user manually dismissed the snackbar, ignore subsequent less-severe events
+  // until a new run/reset.
+  function handleStop(reason: StopReason) {
+    const p = priorityOf(reason);
+    if (stopFinalized && p <= lastShownPriority) {
+      // still record the raw stop reason for inspection, but don't trigger UI
+      setStopReason(reason);
+      return;
+    }
+
+    setStopReason(reason);
+    setVisibleStop((prevVisible) => {
+      // priority: eject > obstacle > rest
+      let newVisible: StopReason | null = prevVisible;
+      if (prevVisible === "eject") newVisible = prevVisible;
+      else if (reason === "eject") newVisible = "eject";
+      else if (prevVisible === "obstacle") newVisible = prevVisible;
+      else if (reason === "obstacle") newVisible = "obstacle";
+      else if (!prevVisible) newVisible = "rest";
+
+      if (newVisible) {
+        setLastShownPriority(priorityOf(newVisible));
+        setStopFinalized(false);
+      }
+
+      return newVisible;
+    });
+  }
 
   return (
     <Box
@@ -204,7 +365,56 @@ function App() {
       <CssBaseline />
       <AppBar position="static" sx={{ width: "100%" }}>
         <Toolbar>
-          <Typography variant="h6">Fuzzy Skateboard Braking — Demo</Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            <Box sx={{ flex: 1, display: "flex", alignItems: "center" }}>
+              <Typography variant="h6" sx={{ color: "#fff" }}>
+                Fuzzy Skateboard Braking Simulation
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+              }}
+            >
+              <Select
+                value={skillMode}
+                onChange={(e) => {
+                  const val = e.target.value as
+                    | "Beginner"
+                    | "Intermediate"
+                    | "Advanced"
+                    | "Custom";
+                  if (val === "Custom") {
+                    setSkillMode("Custom");
+                    document.title = `Braking Simulation — Custom`;
+                  } else {
+                    applyPreset(val);
+                  }
+                }}
+                sx={{
+                  backgroundColor: "#fff",
+                  borderRadius: 1,
+                  minWidth: 160,
+                  color: "rgba(0,0,0,0.87)",
+                }}
+              >
+                <MenuItem value="Beginner">Beginner</MenuItem>
+                <MenuItem value="Intermediate">Intermediate</MenuItem>
+                <MenuItem value="Advanced">Advanced</MenuItem>
+                <MenuItem value="Custom">Custom</MenuItem>
+              </Select>
+            </Box>
+          </Box>
         </Toolbar>
       </AppBar>
 
@@ -235,8 +445,6 @@ function App() {
               {/* Right: Graphs (50%) */}
               <Box sx={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
                 <GraphSelector
-                  showPosition={showPosition}
-                  setShowPosition={setShowPosition}
                   showVelocity={showVelocity}
                   setShowVelocity={setShowVelocity}
                   showAcceleration={showAcceleration}
@@ -246,14 +454,6 @@ function App() {
                   showDistance={showDistance}
                   setShowDistance={setShowDistance}
                 />
-
-                {showPosition && (
-                  <TimeSeriesChart
-                    data={chartData}
-                    dataKey="x"
-                    name="Position (m)"
-                  />
-                )}
                 {showVelocity && (
                   <TimeSeriesChart
                     data={chartData}
@@ -304,16 +504,54 @@ function App() {
               setRollingResistance={setRollingResistance}
               timeScale={timeScale}
               setTimeScale={setTimeScale}
+              ejectAccelThreshold={ejectAccelThreshold}
+              setEjectAccelThreshold={setEjectAccelThreshold}
+              mode={skillMode}
             />
           </Paper>
         )}
 
         {tabIndex === 2 && (
           <Paper sx={{ p: 1 }}>
-            <FuzzyTuner />
+            <FuzzyTuner mode={skillMode} onModeChange={setSkillMode} />
           </Paper>
         )}
       </Box>
+      {/* Stop reason toast (non-modal) */}
+      <Snackbar
+        open={!!visibleStop}
+        onClose={(event?: React.SyntheticEvent | Event, reason?: string) => {
+          // hide visibleStop when user dismisses; do not clear logs or stop details
+          handleSnackbarClose(event, reason);
+          setVisibleStop(null);
+        }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={(event?: React.SyntheticEvent | Event, reason?: string) => {
+            handleSnackbarClose(event, reason);
+            setVisibleStop(null);
+          }}
+          severity={
+            visibleStop === "eject"
+              ? "error"
+              : visibleStop === "obstacle"
+              ? "warning"
+              : "info"
+          }
+          sx={{ width: "100%" }}
+        >
+          {visibleStop === "eject" && stateRef.current?.stopDetails
+            ? `Rider thrown off: deceleration ${stateRef.current.stopDetails.decel.toFixed(
+                2
+              )} m/s², threshold: ${stateRef.current.stopDetails.decelThreshold.toFixed(
+                2
+              )} m/s²)`
+            : visibleStop === "obstacle"
+            ? "The board hit the obstacle."
+            : "The board has come to rest."}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

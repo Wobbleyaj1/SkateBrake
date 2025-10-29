@@ -27,7 +27,12 @@ export default function TimeSeriesChart({
       <ResponsiveContainer width="100%" height="85%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="t" />
+          <XAxis
+            dataKey="t"
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={(v) => Number(v).toFixed(2)}
+          />
           <YAxis />
           <Tooltip />
           <Legend />
@@ -37,6 +42,8 @@ export default function TimeSeriesChart({
             stroke="#1976d2"
             dot={false}
             strokeWidth={2}
+            isAnimationActive={false}
+            connectNulls
           />
         </LineChart>
       </ResponsiveContainer>
