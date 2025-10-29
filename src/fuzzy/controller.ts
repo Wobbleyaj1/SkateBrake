@@ -15,10 +15,12 @@ type MF =
   | { name: string; type: "trap"; params: [number, number, number, number] };
 
 // default MFs (numbers chosen for ranges: speed 0-10 m/s, distance 0-20 m, brake 0-1)
+// tuned speed MFs: narrower Low and Medium ranges for finer control at
+// common riding speeds (0-8 m/s). This improves early braking sensitivity.
 let speedMFs: MF[] = [
-  { name: "Low", type: "tri", params: [0, 0, 4] },
-  { name: "Medium", type: "tri", params: [2, 5, 8] },
-  { name: "High", type: "tri", params: [6, 10, 10] },
+  { name: "Low", type: "tri", params: [0, 0, 2.5] },
+  { name: "Medium", type: "tri", params: [1.5, 4, 6.5] },
+  { name: "High", type: "tri", params: [5.5, 10, 12] },
 ];
 
 let distanceMFs: MF[] = [
