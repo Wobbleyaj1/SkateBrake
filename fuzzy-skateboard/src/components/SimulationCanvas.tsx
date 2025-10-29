@@ -51,31 +51,40 @@ export default function SimulationCanvas({
       ctx.fillStyle = "#f8fafc";
       ctx.fillRect(0, 0, width, height);
 
-      // calculate drawing scale so obstacle fits
-      const viewMargin = 20; // px
+      // calculate drawing scale so obstacle fits along the slope
+      const viewMargin = 40; // px
       const worldMax = Math.max(10, s.obstaclePosition || 10);
+      // pixels per meter along-slope
       const pixelsPerMeter = (width - viewMargin * 2) / worldMax;
 
-      // ground line coordinates (we will tilt by theta)
-      const midY = height / 2;
-      const theta = s.theta;
+      // origin on canvas for world x=0 (start of slope)
+      const x0 = viewMargin;
+      const y0 = height / 2; // baseline vertical origin
+      // drawTheta is the visual angle we render. The app stores physics theta in
+      // `s.theta` (we map UI incline -> physics theta in App). To make the
+      // canvas show the same numeric incline as the slider (so slider=+1 =>
+      // canvas shows +1 uphill), we invert the stored physics theta here.
+      // That way the UI slider meaning (positive = uphill to the right)
+      // is what the user sees, while physics still uses `s.theta`.
+      const drawTheta = -s.theta;
 
-      // draw incline as a long line
+      // compute end point of slope in canvas coords using projection along slope
+      const endX = x0 + worldMax * pixelsPerMeter * Math.cos(drawTheta);
+      const endY = y0 - worldMax * pixelsPerMeter * Math.sin(drawTheta);
+
+      // draw incline as a line from origin to end
       ctx.strokeStyle = "#94a3b8";
       ctx.lineWidth = 4;
       ctx.beginPath();
-      // compute start and end in world meters mapped to pixels
-      const x0 = viewMargin;
-      const y0 = midY - Math.tan(theta) * x0 * 0.2;
-      const x1 = width - viewMargin;
-      const y1 = midY - Math.tan(theta) * x1 * 0.2;
       ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
+      ctx.lineTo(endX, endY);
       ctx.stroke();
 
-      // draw obstacle as a block at obstaclePosition
-      const obstacleXpx = viewMargin + s.obstaclePosition * pixelsPerMeter;
-      const obstacleYpx = y0 + (obstacleXpx - x0) * Math.tan(theta) * 0.2;
+      // draw obstacle as a block at obstaclePosition (project along slope)
+      const obstacleXpx =
+        x0 + s.obstaclePosition * pixelsPerMeter * Math.cos(drawTheta);
+      const obstacleYpx =
+        y0 - s.obstaclePosition * pixelsPerMeter * Math.sin(drawTheta);
       const obsW = 18;
       const obsH = 32;
       ctx.fillStyle = "#ef4444";
@@ -84,17 +93,20 @@ export default function SimulationCanvas({
       ctx.strokeRect(obstacleXpx - obsW / 2, obstacleYpx - obsH, obsW, obsH);
 
       // draw skateboard (rectangle) at x position
-      const skateboardXpx = viewMargin + s.x * pixelsPerMeter;
-      const skateboardYpx = y0 + (skateboardXpx - x0) * Math.tan(theta) * 0.2;
+      // project skateboard position along the slope (s.x is distance along slope)
+      const skateboardXpx = x0 + s.x * pixelsPerMeter * Math.cos(drawTheta);
+      const skateboardYpx = y0 - s.x * pixelsPerMeter * Math.sin(drawTheta);
       // skateboard body
       ctx.save();
       ctx.translate(skateboardXpx, skateboardYpx);
-      ctx.rotate(-Math.atan(0.2 * Math.tan(theta))); // small tilt to match slope
+      // rotate so the board aligns with the drawn slope
+      ctx.rotate(-drawTheta);
       ctx.fillStyle = "#111827";
       ctx.fillRect(-28, -10, 56, 6);
       // wheels
       ctx.fillStyle = "#0f172a";
       ctx.beginPath();
+      // wheels positioned relative to rotated board
       ctx.arc(-18, 0, 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
@@ -102,10 +114,14 @@ export default function SimulationCanvas({
       ctx.fill();
       ctx.restore();
 
-      // rider as a simple circle above board
+      // rider as a simple circle above board (offset along slope normal)
+      // compute a small normal offset to place rider above the board
+      const normalOffset = 22;
+      const riderX = skateboardXpx + normalOffset * Math.sin(drawTheta);
+      const riderY = skateboardYpx - normalOffset * Math.cos(drawTheta);
       ctx.fillStyle = "#fde68a";
       ctx.beginPath();
-      ctx.arc(skateboardXpx, skateboardYpx - 22, 8, 0, Math.PI * 2);
+      ctx.arc(riderX, riderY, 8, 0, Math.PI * 2);
       ctx.fill();
 
       // HUD overlays
@@ -130,9 +146,10 @@ export default function SimulationCanvas({
       if (showDebug) {
         ctx.fillStyle = "#475569";
         ctx.font = "12px monospace";
+        // show the incline in degrees using the UI convention (invert physics theta)
         ctx.fillText(
           `mass=${s.mass.toFixed(1)}kg  mu=${s.mu.toFixed(2)}  incline=${(
-            (s.theta * 180) /
+            (-s.theta * 180) /
             Math.PI
           ).toFixed(1)}°`,
           10,
@@ -148,12 +165,23 @@ export default function SimulationCanvas({
     // We use effect depending on uiTick below.
   }, [uiTick, width, height, stateRef, showDebug]);
 
-
-
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", flex: 1, minWidth: 0 }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
       {/* Control buttons */}
-      <Stack direction="row" spacing={1} sx={{ mb: 2, justifyContent: "center" }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ mb: 2, justifyContent: "center" }}
+      >
         {!running ? (
           <Button variant="contained" color="primary" onClick={onStart}>
             Start
@@ -172,10 +200,24 @@ export default function SimulationCanvas({
           </IconButton>
         )}
       </Stack>
-      
+
       {/* Canvas */}
-      <Box sx={{ flex: 1, display: "flex", width: "100%", height: "100%", alignItems: "stretch", justifyContent: "stretch", minHeight: 0, minWidth: 0 }}>
-        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      <Box
+        sx={{
+          flex: 1,
+          display: "flex",
+          width: "100%",
+          height: "100%",
+          alignItems: "stretch",
+          justifyContent: "stretch",
+          minHeight: 0,
+          minWidth: 0,
+        }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
       </Box>
     </Box>
   );
