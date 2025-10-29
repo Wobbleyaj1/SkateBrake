@@ -8,6 +8,11 @@ import {
   Tabs,
   Tab,
   Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
 } from "@mui/material";
 import SimulationCanvas from "./components/SimulationCanvas";
 import ControlsPanel from "./components/ControlsPanel";
@@ -15,7 +20,7 @@ import FuzzyTuner from "./components/FuzzyTuner";
 import GraphSelector from "./components/GraphSelector";
 import TimeSeriesChart from "./components/TimeSeriesChart";
 import { createDefaultState, startLoop, stopLoop } from "./physics/engine";
-import type { SimulationState } from "./physics/engine";
+import type { SimulationState, StopReason } from "./physics/engine";
 import { getBrakePercent } from "./fuzzy/controller";
 import { Logger } from "./utils/logger";
 
@@ -29,6 +34,9 @@ function App() {
   const [rollingResistance, setRollingResistance] = useState(0.01);
   const [timeScale, setTimeScale] = useState(1);
   const [simRunning, setSimRunning] = useState(false);
+  const [ejectAccelThreshold, setEjectAccelThreshold] = useState(8);
+  // last reason the sim ended (rest | obstacle | eject)
+  const [stopReason, setStopReason] = useState<StopReason | null>(null);
 
   // Graph visibility
   const [showPosition, setShowPosition] = useState(false);
@@ -61,6 +69,7 @@ function App() {
     s.mu = mu;
     s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
+    s.ejectAccelThreshold = ejectAccelThreshold;
     stateRef.current = s;
     loggerRef.current.clear();
     loggerRef.current.push({
@@ -84,6 +93,7 @@ function App() {
       stateRef.current.c_roll = rollingResistance;
       stateRef.current.x = 0;
       stateRef.current.t = 0;
+      stateRef.current.ejectAccelThreshold = ejectAccelThreshold;
       loggerRef.current.clear();
     }
   }, [
@@ -94,6 +104,7 @@ function App() {
     inclineDeg,
     rollingResistance,
     simRunning,
+    ejectAccelThreshold,
   ]);
 
   // Physics step callback
@@ -129,12 +140,21 @@ function App() {
       s.c_roll = rollingResistance;
       loggerRef.current.clear();
       setSimRunning(true);
+      // clear previous stop reason/details
+      setStopReason(null);
+      stateRef.current.stopDetails = null;
       startLoop({
         stateRef,
         onStep: onPhysicsStep,
         timeScale,
         uiCallback: () => setUiTick((t) => t + 1),
         rafRef,
+        onEnd: (reason) => {
+          // update UI state when engine stops itself
+          setSimRunning(false);
+          setUiTick((t) => t + 1);
+          setStopReason(reason);
+        },
       });
     }
   };
@@ -156,6 +176,7 @@ function App() {
     s.mu = mu;
     s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
+    // no geometry defaults here; engine defaults are used
     stateRef.current = s;
     loggerRef.current.clear();
     loggerRef.current.push({
@@ -168,6 +189,8 @@ function App() {
     });
     setSimRunning(false);
     setUiTick((t) => t + 1);
+    setStopReason(null);
+    stateRef.current.stopDetails = null;
   };
 
   // Export CSV
@@ -180,6 +203,15 @@ function App() {
     a.download = "simulation_log.csv";
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDialogDismiss = () => {
+    setStopReason(null);
+    if (stateRef.current) stateRef.current.stopDetails = null;
+  };
+
+  const handleDialogReset = () => {
+    handleReset();
   };
 
   // Chart data
@@ -204,7 +236,20 @@ function App() {
       <CssBaseline />
       <AppBar position="static" sx={{ width: "100%" }}>
         <Toolbar>
-          <Typography variant="h6">Fuzzy Skateboard Braking — Demo</Typography>
+          <Box sx={{ display: "flex", flexDirection: "column" }}>
+            <Typography variant="h6">
+              Fuzzy Skateboard Braking — Demo
+            </Typography>
+            {stopReason && (
+              <Typography variant="caption" component="div">
+                {stopReason === "eject"
+                  ? "Simulation stopped: rider ejected"
+                  : stopReason === "obstacle"
+                  ? "Simulation stopped: hit obstacle"
+                  : "Simulation stopped: at rest"}
+              </Typography>
+            )}
+          </Box>
         </Toolbar>
       </AppBar>
 
@@ -304,6 +349,8 @@ function App() {
               setRollingResistance={setRollingResistance}
               timeScale={timeScale}
               setTimeScale={setTimeScale}
+              ejectAccelThreshold={ejectAccelThreshold}
+              setEjectAccelThreshold={setEjectAccelThreshold}
             />
           </Paper>
         )}
@@ -314,6 +361,35 @@ function App() {
           </Paper>
         )}
       </Box>
+      {/* Stop reason dialog (replaces canvas overlay for clarity) */}
+      <Dialog open={!!stopReason} onClose={handleDialogDismiss}>
+        <DialogTitle>
+          {stopReason === "eject"
+            ? "Rider Ejected"
+            : stopReason === "obstacle"
+            ? "Hit Obstacle"
+            : "Simulation Stopped"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            {stopReason === "eject" && stateRef.current?.stopDetails
+              ? `Decel: ${stateRef.current.stopDetails.decel.toFixed(
+                  2
+                )} m/s² — threshold ${stateRef.current.stopDetails.decelThreshold.toFixed(
+                  2
+                )} m/s²`
+              : stopReason === "obstacle"
+              ? "The board hit the obstacle."
+              : "The board has come to rest."}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDialogDismiss}>Dismiss</Button>
+          <Button onClick={handleDialogReset} variant="contained">
+            Reset Simulation
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
