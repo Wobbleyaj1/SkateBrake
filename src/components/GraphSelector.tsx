@@ -16,7 +16,7 @@ type Props = {
 export default function GraphSelector(props: Props) {
   return (
     <Box>
-      <Typography variant="subtitle1">Graphs (default: OFF)</Typography>
+      <Typography variant="subtitle1">Graphs</Typography>
       <FormControlLabel
         control={
           <Checkbox

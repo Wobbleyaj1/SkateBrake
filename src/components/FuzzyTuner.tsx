@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -7,6 +7,8 @@ import {
   Stack,
   LinearProgress,
   Tooltip,
+  IconButton,
+  Popover,
 } from "@mui/material";
 import {
   getDefaultMFs,
@@ -29,10 +31,20 @@ type MFs = Record<
   Array<{ name: string; type: string; params: number[] }>
 >;
 
-export default function FuzzyTuner() {
+export default function FuzzyTuner({
+  onModeChange,
+}: {
+  onModeChange?: (
+    mode: "Beginner" | "Intermediate" | "Advanced" | "Custom"
+  ) => void;
+}) {
   // fetch defaults from controller
   const defaults = getDefaultMFs() as MFs;
   const [local, setLocal] = useState<MFs>(defaults);
+  // staged mode inside tuner; not saved to parent until Apply is pressed
+  const [stagedMode, setStagedMode] = useState<
+    "Beginner" | "Intermediate" | "Advanced" | "Custom"
+  >("Custom");
 
   // sample inputs for live preview
   const [sampleSpeed, setSampleSpeed] = useState<number>(4);
@@ -55,21 +67,24 @@ export default function FuzzyTuner() {
     paramIdx: number,
     v: number
   ) {
+    // create a new copy and update state; call onModeChange after state update
     setLocal((prev) => {
       const copy: any = JSON.parse(JSON.stringify(prev));
       copy[group][mfIdx].params[paramIdx] = v;
       return copy;
     });
+    setStagedMode("Custom");
   }
 
   function apply() {
     setMemberships(local);
+    if (onModeChange) onModeChange(stagedMode);
   }
 
   function reset() {
     const d = getDefaultMFs() as MFs;
     setLocal(d);
-    setMemberships(d);
+    setStagedMode("Custom");
   }
 
   function presetBeginner() {
@@ -93,6 +108,7 @@ export default function FuzzyTuner() {
       ];
     }
     setLocal(copy);
+    setStagedMode("Beginner");
   }
 
   function presetIntermediate() {
@@ -114,6 +130,7 @@ export default function FuzzyTuner() {
       ];
     }
     setLocal(copy);
+    setStagedMode("Intermediate");
   }
 
   function presetAdvanced() {
@@ -137,6 +154,7 @@ export default function FuzzyTuner() {
       ];
     }
     setLocal(copy);
+    setStagedMode("Advanced");
   }
 
   const brakePreview = useMemo(() => {
@@ -148,15 +166,140 @@ export default function FuzzyTuner() {
   }, [sampleSpeed, sampleDistance, local]);
 
   const [applied, setApplied] = useState(false);
+  // popover for info
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const handleInfoClick = (e: React.MouseEvent<HTMLElement>) =>
+    setAnchorEl(e.currentTarget);
+  const handleInfoClose = () => setAnchorEl(null);
+  const infoOpen = Boolean(anchorEl);
+
+  // canvas refs map for MF plots
+  const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+
+  // draw MF shapes for a group onto its canvas
+  function drawMFsOnCanvas(
+    group: string,
+    cvs: HTMLCanvasElement | null,
+    mfs: any[]
+  ) {
+    if (!cvs) return;
+    const ctx = cvs.getContext("2d");
+    if (!ctx) return;
+    const w = (cvs.width = 240);
+    const h = (cvs.height = 60);
+    ctx.clearRect(0, 0, w, h);
+    // domain depends on group
+    const domain =
+      group === "Brake" ? [0, 1] : group === "Speed" ? [0, 12] : [0, 40];
+    const [a, b] = domain;
+    // draw background grid
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(0,0,0,0.06)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const x = (i / 4) * w;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    // draw each MF
+    const colors = ["#0284c7", "#0ea5a4", "#ef4444", "#7c3aed"];
+    mfs.forEach((mf, idx) => {
+      ctx.beginPath();
+      ctx.strokeStyle = colors[idx % colors.length];
+      ctx.lineWidth = 2;
+      const samples = 120;
+      for (let i = 0; i <= samples; i++) {
+        const t = i / samples;
+        const x = a + (b - a) * t;
+        // evaluate triangular/trap
+        let yv = 0;
+        const p = mf.params;
+        if (mf.type === "tri") {
+          const [p0, p1, p2] = p;
+          if (x <= p0 || x >= p2) yv = 0;
+          else if (x <= p1) yv = (x - p0) / (p1 - p0 || 1);
+          else yv = (p2 - x) / (p2 - p1 || 1);
+        } else {
+          // trap
+          const [p0, p1, p2, p3] = p;
+          if (x <= p0 || x >= p3) yv = 0;
+          else if (x >= p1 && x <= p2) yv = 1;
+          else if (x > p0 && x < p1) yv = (x - p0) / (p1 - p0 || 1);
+          else yv = (p3 - x) / (p3 - p2 || 1);
+        }
+        const px = t * w;
+        const py = h - yv * h;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    });
+  }
+
+  // redraw canvases when local MFs change
+  useEffect(() => {
+    Object.entries(local).forEach(([group, mfs]) => {
+      const cvs = canvasRefs.current[group];
+      drawMFsOnCanvas(group, cvs, mfs as any[]);
+    });
+  }, [local]);
 
   return (
     <Box>
-      <Typography variant="h6">Fuzzy Tuner</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Tweak membership functions for Speed, Distance and Brake. Use the live
-        preview to see brake output for a sample speed & distance. Click Apply
-        to make changes active.
-      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Box>
+          <Typography variant="h6">Fuzzy Tuner</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Tweak membership functions for Speed, Distance and Brake. Use the
+            live preview to see brake output for a sample speed & distance.
+            Click Apply to make changes active.
+          </Typography>
+        </Box>
+        <Box>
+          <Tooltip title="Explain membership functions and presets">
+            <IconButton size="small" onClick={handleInfoClick}>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm.88 15h-1.75v-6h1.75v6zM12 8.75c-.48 0-.88-.39-.88-.87s.4-.87.88-.87c.49 0 .88.39.88.87s-.4.87-.88.87z"
+                  fill="currentColor"
+                />
+              </svg>
+            </IconButton>
+          </Tooltip>
+          <Popover
+            open={infoOpen}
+            anchorEl={anchorEl}
+            onClose={handleInfoClose}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          >
+            <Box sx={{ p: 2, maxWidth: 320 }}>
+              <Typography variant="subtitle2">Membership functions</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Each group (Speed, Distance, Brake) is represented by triangular
+                or trapezoidal membership functions. Move the sliders to reshape
+                them. The mini-plots next to each group show the shape of the
+                functions. Use presets to quickly choose Beginner / Intermediate
+                / Advanced behavior.
+              </Typography>
+            </Box>
+          </Popover>
+        </Box>
+      </Box>
 
       <Box
         sx={{
@@ -174,6 +317,18 @@ export default function FuzzyTuner() {
                 {group === "Distance" && "Range: 0–40 m"}
                 {group === "Brake" && "Range: 0–1 (0%–100%)"}
               </Typography>
+
+              <canvas
+                ref={(el) => {
+                  canvasRefs.current[group] = el;
+                }}
+                style={{
+                  width: 240,
+                  height: 60,
+                  display: "block",
+                  marginTop: 8,
+                }}
+              />
 
               <Box sx={{ mt: 1 }}>
                 {mfs.map((mf: any, i: number) => (

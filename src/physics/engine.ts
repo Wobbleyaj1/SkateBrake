@@ -87,6 +87,14 @@ export function physicsStep(state: SimulationState): StopReason | null {
   const g = 9.81;
   const m = Math.max(0.1, state.mass);
   const theta = state.theta;
+  // if we're already at or past the obstacle, declare collision immediately
+  if (state.x >= state.obstaclePosition) {
+    state.x = state.obstaclePosition;
+    state.v = 0;
+    state.a = 0;
+    state.t += state.dt;
+    return "obstacle";
+  }
   const N = m * g * Math.cos(theta);
   // downslope gravitational force (positive downhill)
   const F_gravity = m * g * Math.sin(theta);
@@ -170,6 +178,18 @@ export function physicsStep(state: SimulationState): StopReason | null {
   const prevX = state.x;
 
   state.v = state.v + a * dt;
+
+  // Predict next position to detect collisions that would occur this step.
+  const predictedX = prevX + state.v * dt;
+  // If the predicted position reaches or passes the obstacle, treat this as a collision
+  // and return 'obstacle' with the board positioned exactly at the obstacle.
+  if (predictedX >= state.obstaclePosition) {
+    state.x = state.obstaclePosition;
+    state.v = 0;
+    state.a = 0;
+    state.t += dt;
+    return "obstacle";
+  }
 
   // If velocity has effectively reached zero or crossed sign, stop the sim immediately.
   // We do this because this simulation's purpose is to determine whether the board

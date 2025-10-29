@@ -24,7 +24,6 @@ export default function SimulationCanvas({
   showDebug = true,
   onStart,
   onPause,
-  onReset,
   onExport,
   running = false,
 }: Props) {
@@ -187,9 +186,6 @@ export default function SimulationCanvas({
             Pause
           </Button>
         )}
-        <Button variant="outlined" onClick={onReset}>
-          Reset
-        </Button>
         {onExport && (
           <IconButton onClick={onExport} title="Export CSV">
             <SaveAltIcon />

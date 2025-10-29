@@ -8,7 +8,6 @@ import {
   Tabs,
   Tab,
   Paper,
-  Button,
   Snackbar,
   Alert,
 } from "@mui/material";
@@ -20,7 +19,11 @@ import GraphSelector from "./components/GraphSelector";
 import TimeSeriesChart from "./components/TimeSeriesChart";
 import { createDefaultState, startLoop, stopLoop } from "./physics/engine";
 import type { SimulationState, StopReason } from "./physics/engine";
-import { getBrakePercent } from "./fuzzy/controller";
+import {
+  getBrakePercent,
+  getDefaultMFs,
+  setMemberships,
+} from "./fuzzy/controller";
 import { Logger } from "./utils/logger";
 
 function App() {
@@ -35,7 +38,11 @@ function App() {
   const [simRunning, setSimRunning] = useState(false);
   const [ejectAccelThreshold, setEjectAccelThreshold] = useState(8);
   // last reason the sim ended (rest | obstacle | eject)
-  const [stopReason, setStopReason] = useState<StopReason | null>(null);
+  const [, setStopReason] = useState<StopReason | null>(null);
+  // selected skill mode for UI (Beginner | Intermediate | Advanced | Custom)
+  const [skillMode, setSkillMode] = useState<
+    "Beginner" | "Intermediate" | "Advanced" | "Custom"
+  >("Intermediate");
 
   // Graph visibility
   const [showPosition, setShowPosition] = useState(false);
@@ -79,6 +86,32 @@ function App() {
       brake: 0,
       distance: Math.max(0, s.obstaclePosition - s.x),
     });
+    // set initial controller mode to Intermediate presets so UI and behavior match
+    // Intermediate preset: Brake and Distance tuned to intermediate values
+    // (duplicate of FuzzyTuner.presetIntermediate values)
+    try {
+      const defaults = getDefaultMFs();
+      const intermediate = {
+        Speed: defaults.Speed,
+        Distance: [
+          { name: "Close", type: "tri", params: [0, 0, 5] },
+          { name: "Medium", type: "tri", params: [3, 9, 15] },
+          { name: "Far", type: "tri", params: [12, 20, 30] },
+        ],
+        Brake: [
+          { name: "Soft", type: "tri", params: [0, 0, 0.28] },
+          { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
+          { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
+        ],
+      };
+      setMemberships(intermediate);
+    } catch (e) {
+      // ignore failures during initial mount
+      // eslint-disable-next-line no-console
+      console.warn("Failed to set intermediate preset on mount", e);
+    }
+    // set document title to include default mode
+    document.title = `Braking Simulation`;
   }, []); // run once
 
   // Update state when parameters change (if not running)
@@ -102,7 +135,6 @@ function App() {
     mu,
     inclineDeg,
     rollingResistance,
-    simRunning,
     ejectAccelThreshold,
   ]);
 
@@ -110,7 +142,8 @@ function App() {
   const handleSnackbarClose = (_: unknown, reason?: string) => {
     // ignore clickaway events (clicks on the screen) to avoid accidental dismissals
     if (reason === "clickaway") return;
-    handleDialogDismiss();
+    // simply hide the stop reason; do NOT clear logs or reset any data here
+    setStopReason(null);
   };
 
   // Physics step callback
@@ -159,7 +192,8 @@ function App() {
           // update UI state when engine stops itself
           setSimRunning(false);
           setUiTick((t) => t + 1);
-          setStopReason(reason);
+          // centralized stop handler to avoid races
+          handleStop(reason);
         },
       });
     }
@@ -217,36 +251,12 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDialogDismiss = () => {
-    // Only close the dialog. Do NOT clear stopDetails or logs here —
-    // closing the dialog should not reset graphs or recorded data.
-    // debug: log dialog dismiss
-    // eslint-disable-next-line no-console
-    console.log("handleDialogDismiss called");
-    setStopReason(null);
-  };
-
-  // Global click logger (temporary) to help diagnose which element is receiving clicks
-  // that might be triggering Reset or other side effects. Enabled only in dev.
-  React.useEffect(() => {
-    function onGlobalClick(e: MouseEvent) {
-      // eslint-disable-next-line no-console
-      console.log(
-        "Global click target:",
-        (e.target as Element)?.tagName,
-        e.target
-      );
-    }
-    window.addEventListener("click", onGlobalClick, true);
-    return () => window.removeEventListener("click", onGlobalClick, true);
-  }, []);
+  // Intentionally no-op: hiding the snackbar should not clear logs or reset data.
 
   // allow backdrop click / escape to close the dialog; the dismiss handler
   // must not clear logs or graphs.
 
-  const handleDialogReset = () => {
-    handleReset();
-  };
+  // snackbar Reset action removed; no handler required
 
   // Chart data
   const chartData = loggerRef.current.getAll().map((d) => ({
@@ -257,6 +267,30 @@ function App() {
     brake: d.brake * 100,
     distance: d.distance,
   }));
+
+  // prefer obstacle/eject over rest when displaying the stop snackbar
+
+  // visible snackbar reason state — once set to a severe reason it won't be
+  // downgraded by subsequent less-severe reasons. This prevents both 'rest'
+  // and 'obstacle' from appearing stacked when they occur in quick succession.
+  const [visibleStop, setVisibleStop] = useState<StopReason | null>(null);
+
+  // Centralized stop handler — call this when the engine indicates the sim stopped.
+  // It sets both the internal stopReason (for state/inspection) and visibleStop
+  // using a priority rule so only the most relevant snackbar is shown.
+  function handleStop(reason: StopReason) {
+    setStopReason(reason);
+    setVisibleStop((prevVisible) => {
+      // priority: eject > obstacle > rest
+      if (prevVisible === "eject") return prevVisible;
+      if (reason === "eject") return "eject";
+      if (prevVisible === "obstacle") return prevVisible;
+      if (reason === "obstacle") return "obstacle";
+      // otherwise set rest only if nothing else shown
+      if (!prevVisible) return "rest";
+      return prevVisible;
+    });
+  }
 
   return (
     <Box
@@ -272,17 +306,11 @@ function App() {
         <Toolbar>
           <Box sx={{ display: "flex", flexDirection: "column" }}>
             <Typography variant="h6">
-              Fuzzy Skateboard Braking — Demo
+              Fuzzy Skateboard Braking Simulation
             </Typography>
-            {stopReason && (
-              <Typography variant="caption" component="div">
-                {stopReason === "eject"
-                  ? "Simulation stopped: rider ejected"
-                  : stopReason === "obstacle"
-                  ? "Simulation stopped: hit obstacle"
-                  : "Simulation stopped: at rest"}
-              </Typography>
-            )}
+            <Typography variant="caption">
+              Mode: {skillMode ?? "Custom"}
+            </Typography>
           </Box>
         </Toolbar>
       </AppBar>
@@ -391,40 +419,43 @@ function App() {
 
         {tabIndex === 2 && (
           <Paper sx={{ p: 1 }}>
-            <FuzzyTuner />
+            <FuzzyTuner onModeChange={setSkillMode} />
           </Paper>
         )}
       </Box>
       {/* Stop reason toast (non-modal) */}
       <Snackbar
-        open={!!stopReason}
-        autoHideDuration={8000}
-        onClose={handleSnackbarClose}
+        open={!!visibleStop}
+        onClose={(event?: React.SyntheticEvent | Event, reason?: string) => {
+          // hide visibleStop when user dismisses; also clear stopReason so popup won't re-open
+          handleSnackbarClose(event, reason);
+          setVisibleStop(null);
+          setStopReason(null);
+        }}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
-          onClose={handleSnackbarClose}
+          onClose={(event?: React.SyntheticEvent | Event, reason?: string) => {
+            handleSnackbarClose(event, reason);
+            setVisibleStop(null);
+            setStopReason(null);
+          }}
           severity={
-            stopReason === "eject"
+            visibleStop === "eject"
               ? "error"
-              : stopReason === "obstacle"
+              : visibleStop === "obstacle"
               ? "warning"
               : "info"
           }
           sx={{ width: "100%" }}
-          action={
-            <Button color="inherit" size="small" onClick={handleDialogReset}>
-              Reset
-            </Button>
-          }
         >
-          {stopReason === "eject" && stateRef.current?.stopDetails
+          {visibleStop === "eject" && stateRef.current?.stopDetails
             ? `Decel: ${stateRef.current.stopDetails.decel.toFixed(
                 2
               )} m/s² — threshold ${stateRef.current.stopDetails.decelThreshold.toFixed(
                 2
               )} m/s²`
-            : stopReason === "obstacle"
+            : visibleStop === "obstacle"
             ? "The board hit the obstacle."
             : "The board has come to rest."}
         </Alert>
