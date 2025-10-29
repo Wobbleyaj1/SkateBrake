@@ -39,9 +39,7 @@ function App() {
   const [timeScale, setTimeScale] = useState(1);
   const [simRunning, setSimRunning] = useState(false);
   const [ejectAccelThreshold, setEjectAccelThreshold] = useState(8);
-  // last reason the sim ended (rest | obstacle | eject)
   const [, setStopReason] = useState<StopReason | null>(null);
-  // selected skill mode for UI (Beginner | Intermediate | Advanced | Custom)
   const [skillMode, setSkillMode] = useState<
     "Beginner" | "Intermediate" | "Advanced" | "Custom"
   >("Intermediate");
@@ -52,7 +50,7 @@ function App() {
   const [showBrake, setShowBrake] = useState(true);
   const [showDistance, setShowDistance] = useState(true);
 
-  // Logger and state refs
+  // Refs for logger and mutable simulation state
   const loggerRef = useRef(new Logger(10000));
   const stateRef = useRef<SimulationState>(createDefaultState());
   const rafRef = useRef<number | null>(null);
@@ -66,7 +64,7 @@ function App() {
     setTabIndex(newValue);
   };
 
-  // Initialize simulation state on mount
+  // Initialize simulation state on mount and apply an intermediate fuzzy preset
   useEffect(() => {
     const s = createDefaultState();
     s.mass = mass;
@@ -87,9 +85,7 @@ function App() {
       brake: 0,
       distance: Math.max(0, s.obstaclePosition - s.x),
     });
-    // set initial controller mode to Intermediate presets so UI and behavior match
-    // Intermediate preset: Brake and Distance tuned to intermediate values
-    // (duplicate of FuzzyTuner.presetIntermediate values)
+  // Apply intermediate presets so UI and behavior match the default mode
     try {
       const defaults = getDefaultMFs();
       const intermediate = {
@@ -107,17 +103,15 @@ function App() {
       };
       setMemberships(intermediate);
     } catch (e) {
-      // ignore failures during initial mount
+      // If setting presets fails, log a warning but continue
       // eslint-disable-next-line no-console
       console.warn("Failed to set intermediate preset on mount", e);
     }
-    // set document title to include default mode
     document.title = `Braking Simulation — ${skillMode}`;
-  }, []); // run once
+  }, []);
 
-  // apply a preset (also used by the titlebar dropdown)
   function applyPreset(mode: "Beginner" | "Intermediate" | "Advanced") {
-    // use the same presets as the tuner: derive from defaults and tweak
+    // Use the same presets as the tuner: derive from defaults and tweak
     const defaults = getDefaultMFs() as any;
     const copy = JSON.parse(JSON.stringify(defaults));
     if (mode === "Beginner") {
@@ -131,8 +125,7 @@ function App() {
         { name: "Medium", type: "tri", params: [6, 12, 18] },
         { name: "Far", type: "tri", params: [15, 28, 40] },
       ];
-      // eject threshold recommendation
-      setEjectAccelThreshold(4);
+  setEjectAccelThreshold(4);
     } else if (mode === "Intermediate") {
       copy.Brake = [
         { name: "Soft", type: "tri", params: [0, 0, 0.28] },
@@ -159,7 +152,7 @@ function App() {
       setEjectAccelThreshold(11);
     }
 
-    // commit presets immediately
+    // Commit presets and update UI mode
     setMemberships(copy);
     setSkillMode(mode);
     document.title = `Braking Simulation — ${mode}`;
@@ -189,22 +182,19 @@ function App() {
     ejectAccelThreshold,
   ]);
 
-  // snackbar close handler (do not clear logs/stopDetails)
   const handleSnackbarClose = (_: unknown, reason?: string) => {
-    // ignore clickaway events (clicks on the screen) to avoid accidental dismissals
+    // Ignore clickaway events to avoid accidental dismissals
     if (reason === "clickaway") return;
     // Mark that the user explicitly dismissed the stop snackbar. This prevents
     // less-severe stop events emitted shortly after from reopening a new
     // snackbar (avoids the "came to rest" popping up under "hit obstacle").
     setStopFinalized(true);
-    // intentionally do NOT clear logs or other simulation data here
+    // intentionally do NOT clear logs or simulation data here
   };
 
-  // Physics step callback
   const onPhysicsStep = (s: SimulationState) => {
     const distance = Math.max(0, s.obstaclePosition - s.x);
-    // use speed magnitude for controller input so braking decisions are
-    // based on how fast the skateboard is moving, regardless of direction
+    // Controller uses speed magnitude so braking decisions are independent of direction
     const speedForController = Math.abs(s.v);
     const brakePercent = getBrakePercent(speedForController, distance);
     s.lastBrakePercent = brakePercent;
@@ -219,7 +209,6 @@ function App() {
     });
   };
 
-  // Start/pause/reset handlers
   const handleStart = () => {
     if (!simRunning) {
       const s = stateRef.current;
@@ -233,12 +222,11 @@ function App() {
       s.c_roll = rollingResistance;
       loggerRef.current.clear();
       setSimRunning(true);
-      // clear previous stop reason/details
-      setStopReason(null);
-      // clear any dismissal/internal stop suppression when starting a new run
-      setStopFinalized(false);
-      setLastShownPriority(0);
-      stateRef.current.stopDetails = null;
+  // Clear previous stop details and UI suppression state
+  setStopReason(null);
+  setStopFinalized(false);
+  setLastShownPriority(0);
+  stateRef.current.stopDetails = null;
       startLoop({
         stateRef,
         onStep: onPhysicsStep,
@@ -265,10 +253,7 @@ function App() {
 
   const handleReset = () => {
     stopLoop(rafRef);
-    // debug: log when reset is invoked to help trace unexpected resets
-    // (user reported clicking on the screen triggers chart reset)
-    // This will appear in the browser console when the handler runs.
-    // Use console.log so it's visible even if debug-level logs are filtered.
+    // Debug: log stack when reset is invoked to aid tracing
     // eslint-disable-next-line no-console
     console.log("handleReset called", new Error().stack);
     const s = createDefaultState();
@@ -279,7 +264,7 @@ function App() {
     s.mu = mu;
     s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
-    // no geometry defaults here; engine defaults are used
+  // No geometry defaults here; engine defaults are used
     stateRef.current = s;
     loggerRef.current.clear();
     loggerRef.current.push({
@@ -293,13 +278,12 @@ function App() {
     setSimRunning(false);
     setUiTick((t) => t + 1);
     setStopReason(null);
-    // reset suppression state when resetting the simulation
+    // Reset suppression state when resetting the simulation
     setStopFinalized(false);
     setLastShownPriority(0);
     stateRef.current.stopDetails = null;
   };
 
-  // Export CSV
   const handleExportCSV = () => {
     const csv = loggerRef.current.toCSV();
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -311,13 +295,6 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // Intentionally no-op: hiding the snackbar should not clear logs or reset data.
-
-  // allow backdrop click / escape to close the dialog; the dismiss handler
-  // must not clear logs or graphs.
-
-  // snackbar Reset action removed; no handler required
-
   // Chart data
   const chartData = loggerRef.current.getAll().map((d) => ({
     // keep time as a number so chart interpolation/smoothing works correctly
@@ -328,12 +305,10 @@ function App() {
     brake: d.brake * 100,
     distance: d.distance,
   }));
-
-  // prefer obstacle/eject over rest when displaying the stop snackbar
-
-  // visible snackbar reason state — once set to a severe reason it won't be
-  // downgraded by subsequent less-severe reasons. This prevents both 'rest'
-  // and 'obstacle' from appearing stacked when they occur in quick succession.
+  // Prefer obstacle/eject over rest when displaying the stop snackbar.
+  // Visible snackbar state and suppression logic ensure only the most relevant
+  // stop notification is shown and that user dismissals temporarily suppress
+  // less-severe subsequent notifications.
   const [visibleStop, setVisibleStop] = useState<StopReason | null>(null);
   // When the user dismisses the snackbar we want to ignore lower-priority
   // stop events that might arrive immediately afterwards. Track whether the
@@ -404,7 +379,6 @@ function App() {
               </Typography>
             </Box>
 
-            {/* center the mode dropdown visually in the title bar */}
             <Box
               sx={{
                 position: "absolute",

@@ -76,7 +76,6 @@ export default function ControlsPanel(props: Props) {
     setTimeScale,
     ejectAccelThreshold,
     setEjectAccelThreshold,
-    // ejectJerkThreshold and geometry fields removed; only accel threshold used
   } = props;
 
   return (
