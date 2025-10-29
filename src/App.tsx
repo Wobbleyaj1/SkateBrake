@@ -10,6 +10,8 @@ import {
   Paper,
   Snackbar,
   Alert,
+  Select,
+  MenuItem,
 } from "@mui/material";
 
 import SimulationCanvas from "./components/SimulationCanvas";
@@ -110,8 +112,58 @@ function App() {
       console.warn("Failed to set intermediate preset on mount", e);
     }
     // set document title to include default mode
-    document.title = `Braking Simulation`;
+    document.title = `Braking Simulation — ${skillMode}`;
   }, []); // run once
+
+  // apply a preset (also used by the titlebar dropdown)
+  function applyPreset(mode: "Beginner" | "Intermediate" | "Advanced") {
+    // use the same presets as the tuner: derive from defaults and tweak
+    const defaults = getDefaultMFs() as any;
+    const copy = JSON.parse(JSON.stringify(defaults));
+    if (mode === "Beginner") {
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.3] },
+        { name: "Moderate", type: "tri", params: [0.15, 0.35, 0.6] },
+        { name: "Hard", type: "tri", params: [0.4, 0.65, 0.85] },
+      ];
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 8] },
+        { name: "Medium", type: "tri", params: [6, 12, 18] },
+        { name: "Far", type: "tri", params: [15, 28, 40] },
+      ];
+      // eject threshold recommendation
+      setEjectAccelThreshold(4);
+    } else if (mode === "Intermediate") {
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.28] },
+        { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
+        { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
+      ];
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 5] },
+        { name: "Medium", type: "tri", params: [3, 9, 15] },
+        { name: "Far", type: "tri", params: [12, 20, 30] },
+      ];
+      setEjectAccelThreshold(7.5);
+    } else if (mode === "Advanced") {
+      copy.Brake = [
+        { name: "Soft", type: "tri", params: [0, 0, 0.2] },
+        { name: "Moderate", type: "tri", params: [0.15, 0.45, 0.75] },
+        { name: "Hard", type: "tri", params: [0.6, 0.95, 1] },
+      ];
+      copy.Distance = [
+        { name: "Close", type: "tri", params: [0, 0, 3] },
+        { name: "Medium", type: "tri", params: [2.5, 8, 14] },
+        { name: "Far", type: "tri", params: [10, 20, 35] },
+      ];
+      setEjectAccelThreshold(11);
+    }
+
+    // commit presets immediately
+    setMemberships(copy);
+    setSkillMode(mode);
+    document.title = `Braking Simulation — ${mode}`;
+  }
 
   // Update state when parameters change (if not running)
   useEffect(() => {
@@ -338,13 +390,56 @@ function App() {
       <CssBaseline />
       <AppBar position="static" sx={{ width: "100%" }}>
         <Toolbar>
-          <Box sx={{ display: "flex", flexDirection: "column" }}>
-            <Typography variant="h6">
-              Fuzzy Skateboard Braking Simulation
-            </Typography>
-            <Typography variant="caption">
-              Mode: {skillMode ?? "Custom"}
-            </Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            <Box sx={{ flex: 1, display: "flex", alignItems: "center" }}>
+              <Typography variant="h6" sx={{ color: "#fff" }}>
+                Fuzzy Skateboard Braking Simulation
+              </Typography>
+            </Box>
+
+            {/* center the mode dropdown visually in the title bar */}
+            <Box
+              sx={{
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+              }}
+            >
+              <Select
+                value={skillMode}
+                onChange={(e) => {
+                  const val = e.target.value as
+                    | "Beginner"
+                    | "Intermediate"
+                    | "Advanced"
+                    | "Custom";
+                  if (val === "Custom") {
+                    setSkillMode("Custom");
+                    document.title = `Braking Simulation — Custom`;
+                  } else {
+                    applyPreset(val);
+                  }
+                }}
+                sx={{
+                  backgroundColor: "#fff",
+                  borderRadius: 1,
+                  minWidth: 160,
+                  color: "rgba(0,0,0,0.87)",
+                }}
+              >
+                <MenuItem value="Beginner">Beginner</MenuItem>
+                <MenuItem value="Intermediate">Intermediate</MenuItem>
+                <MenuItem value="Advanced">Advanced</MenuItem>
+                <MenuItem value="Custom">Custom</MenuItem>
+              </Select>
+            </Box>
           </Box>
         </Toolbar>
       </AppBar>
@@ -437,13 +532,14 @@ function App() {
               setTimeScale={setTimeScale}
               ejectAccelThreshold={ejectAccelThreshold}
               setEjectAccelThreshold={setEjectAccelThreshold}
+              mode={skillMode}
             />
           </Paper>
         )}
 
         {tabIndex === 2 && (
           <Paper sx={{ p: 1 }}>
-            <FuzzyTuner onModeChange={setSkillMode} />
+            <FuzzyTuner mode={skillMode} onModeChange={setSkillMode} />
           </Paper>
         )}
       </Box>

@@ -32,8 +32,10 @@ type MFs = Record<
 >;
 
 export default function FuzzyTuner({
+  mode = "Custom",
   onModeChange,
 }: {
+  mode?: "Beginner" | "Intermediate" | "Advanced" | "Custom";
   onModeChange?: (
     mode: "Beginner" | "Intermediate" | "Advanced" | "Custom"
   ) => void;
@@ -41,10 +43,7 @@ export default function FuzzyTuner({
   // fetch defaults from controller
   const defaults = getDefaultMFs() as MFs;
   const [local, setLocal] = useState<MFs>(defaults);
-  // staged mode inside tuner; not saved to parent until Apply is pressed
-  const [stagedMode, setStagedMode] = useState<
-    "Beginner" | "Intermediate" | "Advanced" | "Custom"
-  >("Custom");
+  // staged mode inside tuner is not required when parent controls mode
 
   // sample inputs for live preview
   const [sampleSpeed, setSampleSpeed] = useState<number>(4);
@@ -73,89 +72,69 @@ export default function FuzzyTuner({
       copy[group][mfIdx].params[paramIdx] = v;
       return copy;
     });
-    setStagedMode("Custom");
+    // editing implies a Custom configuration locally
   }
 
   function apply() {
     setMemberships(local);
-    if (onModeChange) onModeChange(stagedMode);
+    if (onModeChange) onModeChange("Custom");
   }
 
   function reset() {
     const d = getDefaultMFs() as MFs;
     setLocal(d);
-    setStagedMode("Custom");
+    // reset implies a Custom configuration locally
   }
 
-  function presetBeginner() {
-    // Beginner: brake earlier (distance treated as closer) and softer outputs
-    const d = getDefaultMFs() as any;
-    const copy = JSON.parse(JSON.stringify(d));
-    if (copy.Brake) {
-      // softer brake outputs (Hard caps below 1)
-      copy.Brake = [
-        { name: "Soft", type: "tri", params: [0, 0, 0.3] },
-        { name: "Moderate", type: "tri", params: [0.15, 0.35, 0.6] },
-        { name: "Hard", type: "tri", params: [0.4, 0.65, 0.85] },
-      ];
-    }
-    if (copy.Distance) {
-      // treat distances as closer so braking begins earlier
-      copy.Distance = [
-        { name: "Close", type: "tri", params: [0, 0, 8] },
-        { name: "Medium", type: "tri", params: [6, 12, 18] },
-        { name: "Far", type: "tri", params: [15, 28, 40] },
-      ];
-    }
-    setLocal(copy);
-    setStagedMode("Beginner");
-  }
+  // preset helpers removed from UI (presets now controlled from the App titlebar)
 
-  function presetIntermediate() {
-    // Intermediate: split the difference between Beginner and Advanced
-    const d = getDefaultMFs() as any;
-    const copy = JSON.parse(JSON.stringify(d));
-    if (copy.Brake) {
-      copy.Brake = [
-        { name: "Soft", type: "tri", params: [0, 0, 0.28] },
-        { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
-        { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
-      ];
+  // reflect external mode changes: when the parent selects a preset mode we
+  // should update the local preview to match the applied preset so the UI
+  // shows the current controller state. Sliders remain locked unless mode
+  // is Custom.
+  useEffect(() => {
+    try {
+      const d = getDefaultMFs() as any;
+      const copy = JSON.parse(JSON.stringify(d));
+      if (mode === "Beginner") {
+        copy.Brake = [
+          { name: "Soft", type: "tri", params: [0, 0, 0.3] },
+          { name: "Moderate", type: "tri", params: [0.15, 0.35, 0.6] },
+          { name: "Hard", type: "tri", params: [0.4, 0.65, 0.85] },
+        ];
+        copy.Distance = [
+          { name: "Close", type: "tri", params: [0, 0, 8] },
+          { name: "Medium", type: "tri", params: [6, 12, 18] },
+          { name: "Far", type: "tri", params: [15, 28, 40] },
+        ];
+      } else if (mode === "Intermediate") {
+        copy.Brake = [
+          { name: "Soft", type: "tri", params: [0, 0, 0.28] },
+          { name: "Moderate", type: "tri", params: [0.12, 0.4, 0.7] },
+          { name: "Hard", type: "tri", params: [0.45, 0.8, 1] },
+        ];
+        copy.Distance = [
+          { name: "Close", type: "tri", params: [0, 0, 5] },
+          { name: "Medium", type: "tri", params: [3, 9, 15] },
+          { name: "Far", type: "tri", params: [12, 20, 30] },
+        ];
+      } else if (mode === "Advanced") {
+        copy.Brake = [
+          { name: "Soft", type: "tri", params: [0, 0, 0.2] },
+          { name: "Moderate", type: "tri", params: [0.15, 0.45, 0.75] },
+          { name: "Hard", type: "tri", params: [0.6, 0.95, 1] },
+        ];
+        copy.Distance = [
+          { name: "Close", type: "tri", params: [0, 0, 3] },
+          { name: "Medium", type: "tri", params: [2.5, 8, 14] },
+          { name: "Far", type: "tri", params: [10, 20, 35] },
+        ];
+      }
+      if (mode !== "Custom") setLocal(copy);
+    } catch (e) {
+      // ignore
     }
-    if (copy.Distance) {
-      copy.Distance = [
-        { name: "Close", type: "tri", params: [0, 0, 5] },
-        { name: "Medium", type: "tri", params: [3, 9, 15] },
-        { name: "Far", type: "tri", params: [12, 20, 30] },
-      ];
-    }
-    setLocal(copy);
-    setStagedMode("Intermediate");
-  }
-
-  function presetAdvanced() {
-    // Advanced: brake later (distance treated as farther) but harder outputs
-    const d = getDefaultMFs() as any;
-    const copy = JSON.parse(JSON.stringify(d));
-    if (copy.Brake) {
-      // stronger braking: Hard peaks closer to 1
-      copy.Brake = [
-        { name: "Soft", type: "tri", params: [0, 0, 0.2] },
-        { name: "Moderate", type: "tri", params: [0.15, 0.45, 0.75] },
-        { name: "Hard", type: "tri", params: [0.6, 0.95, 1] },
-      ];
-    }
-    if (copy.Distance) {
-      // treat distances as farther so braking happens later
-      copy.Distance = [
-        { name: "Close", type: "tri", params: [0, 0, 3] },
-        { name: "Medium", type: "tri", params: [2.5, 8, 14] },
-        { name: "Far", type: "tri", params: [10, 20, 35] },
-      ];
-    }
-    setLocal(copy);
-    setStagedMode("Advanced");
-  }
+  }, [mode]);
 
   const brakePreview = useMemo(() => {
     try {
@@ -263,6 +242,13 @@ export default function FuzzyTuner({
             live preview to see brake output for a sample speed & distance.
             Click Apply to make changes active.
           </Typography>
+          {mode !== "Custom" && (
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+              Sliders are locked while in <strong>{mode}</strong> mode. Switch
+              to <strong>Custom</strong> in the title bar to edit the membership
+              functions. Applying changes is only required for Custom mode.
+            </Typography>
+          )}
         </Box>
         <Box>
           <Tooltip title="Explain membership functions and presets">
@@ -377,6 +363,7 @@ export default function FuzzyTuner({
                                 )
                               }
                               sx={{ flex: 1 }}
+                              disabled={mode !== "Custom"}
                             />
                             <Typography
                               variant="caption"
@@ -404,20 +391,12 @@ export default function FuzzyTuner({
                 setApplied(true);
                 setTimeout(() => setApplied(false), 1400);
               }}
+              disabled={mode !== "Custom"}
             >
               Apply
             </Button>
             <Button variant="outlined" onClick={reset}>
               Reset
-            </Button>
-            <Button variant="text" onClick={presetBeginner}>
-              Beginner
-            </Button>
-            <Button variant="text" onClick={presetIntermediate}>
-              Intermediate
-            </Button>
-            <Button variant="text" onClick={presetAdvanced}>
-              Advanced
             </Button>
             {applied && (
               <Typography variant="caption" sx={{ alignSelf: "center" }}>

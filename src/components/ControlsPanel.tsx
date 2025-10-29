@@ -1,12 +1,4 @@
-import {
-  Box,
-  Slider,
-  Typography,
-  Divider,
-  Button,
-  Stack,
-  Tooltip,
-} from "@mui/material";
+import { Box, Slider, Typography, Divider } from "@mui/material";
 
 type Props = {
   mass: number;
@@ -25,6 +17,7 @@ type Props = {
   setTimeScale: (v: number) => void;
   ejectAccelThreshold: number;
   setEjectAccelThreshold: (v: number) => void;
+  mode?: "Beginner" | "Intermediate" | "Advanced" | "Custom";
   // Note: only decel threshold is used for ejection decision
 };
 
@@ -36,6 +29,7 @@ function LabeledSlider({
   step,
   onChange,
   format,
+  disabled,
 }: {
   label: string;
   value: number;
@@ -44,6 +38,7 @@ function LabeledSlider({
   step?: number;
   onChange: (v: number) => void;
   format?: (v: number) => string;
+  disabled?: boolean;
 }) {
   return (
     <Box sx={{ my: 1 }}>
@@ -56,6 +51,7 @@ function LabeledSlider({
         max={max}
         step={step ?? (max - min) / 100}
         onChange={(_, v) => onChange(Array.isArray(v) ? v[0] : v)}
+        disabled={disabled}
         valueLabelDisplay="auto"
       />
     </Box>
@@ -150,46 +146,20 @@ export default function ControlsPanel(props: Props) {
 
       <Typography variant="subtitle2">Ejection / Rider Safety</Typography>
       <LabeledSlider
-        label="Eject accel threshold (m/s²)"
+        label="Acceleration threshold (m/s²)"
         value={ejectAccelThreshold}
         min={1}
         max={30}
         step={0.5}
         onChange={setEjectAccelThreshold}
+        disabled={props.mode !== undefined && props.mode !== "Custom"}
       />
-
-      <Stack direction="row" spacing={1} sx={{ my: 1 }}>
-        <Tooltip title="Gentle braking: recommended for beginners (~4 m/s²)">
-          <Button size="small" onClick={() => setEjectAccelThreshold(4)}>
-            Beginner
-          </Button>
-        </Tooltip>
-        <Tooltip title="Balanced braking: recommended for most riders (~7.5 m/s²)">
-          <Button size="small" onClick={() => setEjectAccelThreshold(7.5)}>
-            Intermediate
-          </Button>
-        </Tooltip>
-        <Tooltip title="Aggressive braking: recommended for experienced riders (~11 m/s²)">
-          <Button size="small" onClick={() => setEjectAccelThreshold(11)}>
-            Advanced
-          </Button>
-        </Tooltip>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ alignSelf: "center", ml: 1 }}
-        >
-          Recommendations: Beginner 4, Intermediate 7.5, Advanced 11 m/s²
+      {props.mode && props.mode !== "Custom" ? (
+        <Typography variant="caption" color="text.secondary" sx={{ my: 1 }}>
+          Eject threshold locked by selected Mode: {props.mode}. Switch to
+          Custom mode in the title bar to edit.
         </Typography>
-      </Stack>
-
-      <Divider sx={{ my: 1 }} />
-
-      <Typography variant="caption" color="text.secondary">
-        Tip: Use the Simulation tab to start/pause/reset the simulation, then
-        toggle graphs here to visualize results. Use the Fuzzy Tuner panel to
-        adjust membership functions if desired.
-      </Typography>
+      ) : null}
     </Box>
   );
 }

@@ -1,4 +1,4 @@
-import { Box, FormControlLabel, Checkbox, Typography } from "@mui/material";
+import { Box, FormControlLabel, Checkbox } from "@mui/material";
 
 type Props = {
   showVelocity: boolean;
@@ -14,8 +14,6 @@ type Props = {
 export default function GraphSelector(props: Props) {
   return (
     <Box>
-      <Typography variant="subtitle1">Graphs</Typography>
-      {/* Position graph removed — velocity, acceleration, brake and distance are primary */}
       <FormControlLabel
         control={
           <Checkbox
