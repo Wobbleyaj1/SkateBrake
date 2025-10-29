@@ -59,7 +59,7 @@ function App() {
     s.x = 0;
     s.obstaclePosition = obstaclePosition;
     s.mu = mu;
-    s.theta = (inclineDeg * Math.PI) / 180;
+    s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
     stateRef.current = s;
     loggerRef.current.clear();
@@ -80,7 +80,7 @@ function App() {
       stateRef.current.v = initialSpeed;
       stateRef.current.obstaclePosition = obstaclePosition;
       stateRef.current.mu = mu;
-      stateRef.current.theta = (inclineDeg * Math.PI) / 180;
+      stateRef.current.theta = -(inclineDeg * Math.PI) / 180;
       stateRef.current.c_roll = rollingResistance;
       stateRef.current.x = 0;
       stateRef.current.t = 0;
@@ -99,7 +99,9 @@ function App() {
   // Physics step callback
   const onPhysicsStep = (s: SimulationState) => {
     const distance = Math.max(0, s.obstaclePosition - s.x);
-    const speedForController = Math.max(0, s.v);
+    // use speed magnitude for controller input so braking decisions are
+    // based on how fast the skateboard is moving, regardless of direction
+    const speedForController = Math.abs(s.v);
     const brakePercent = getBrakePercent(speedForController, distance);
     s.lastBrakePercent = brakePercent;
 
@@ -123,7 +125,7 @@ function App() {
       s.t = 0;
       s.obstaclePosition = obstaclePosition;
       s.mu = mu;
-      s.theta = (inclineDeg * Math.PI) / 180;
+      s.theta = -(inclineDeg * Math.PI) / 180;
       s.c_roll = rollingResistance;
       loggerRef.current.clear();
       setSimRunning(true);
@@ -152,7 +154,7 @@ function App() {
     s.x = 0;
     s.obstaclePosition = obstaclePosition;
     s.mu = mu;
-    s.theta = (inclineDeg * Math.PI) / 180;
+    s.theta = -(inclineDeg * Math.PI) / 180;
     s.c_roll = rollingResistance;
     stateRef.current = s;
     loggerRef.current.clear();
